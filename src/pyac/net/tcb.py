@@ -21,7 +21,6 @@ are segments to send and events to report.
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum, auto
 
@@ -139,7 +138,9 @@ class Tcb:
 
     _unacked: list[_Unacked] = field(default_factory=list)
     pending_segments: list[bytes] = field(default_factory=list)
-    pending_events: list[object] = field(default_factory=list)
+    pending_events: list[tuple[str, object]] = field(default_factory=list)
+    """``(name, detail)`` pairs the stack translates into typed events. Kept as
+    plain tuples so ``pyac.net.tcb`` need not import the event classes."""
     error: NetworkError | None = None
 
     # --- public API --------------------------------------------------------
@@ -512,13 +513,3 @@ class Tcb:
         self.retransmit_deadline = None
         self.connect_deadline = None
         self.pending_events.append(("error", error))
-
-
-def take(items: list[object], sink: Callable[[object], None] | None = None) -> list[object]:
-    """Drain a pending list, optionally handing each item to ``sink``."""
-    drained = list(items)
-    items.clear()
-    if sink is not None:
-        for item in drained:
-            sink(item)
-    return drained
