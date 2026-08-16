@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<config-auth client="vpn" type="auth-request" aggregate-auth-version="2">
+    <opaque is-for="sg">
+        <tunnel-group>DefaultWEBVPNGroup</tunnel-group>
+        <aggauth-handle>168430092</aggauth-handle>
+    </opaque>
+    <auth id="main">
+        <title>Login</title>
+        <message>Login failed.</message>
+        <error id="88" param1="" param2="">Login failed.</error>
+        <form>
+            <input type="text" name="username" label="Username:"></input>
+            <input type="password" name="password" label="Password:"></input>
+        </form>
+    </auth>
+</config-auth>

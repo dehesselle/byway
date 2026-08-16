@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<config-auth client="vpn" type="auth-request" aggregate-auth-version="2">
+    <opaque is-for="sg">
+        <tunnel-group>DefaultWEBVPNGroup</tunnel-group>
+        <aggauth-handle>168430091</aggauth-handle>
+    </opaque>
+    <auth id="challenge">
+        <title>Login</title>
+        <message>Enter your one-time passcode.</message>
+        <form>
+            <input type="password" name="password" label="Answer:"></input>
+        </form>
+    </auth>
+</config-auth>

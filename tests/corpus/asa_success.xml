@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<config-auth client="vpn" type="complete" aggregate-auth-version="2">
+    <session-id>a1b2c3d4</session-id>
+    <session-token>9F86D081884C7D659A2FEAA0C55AD015A3BF4F1B2B0B822CD15D6C15B0F00A08</session-token>
+    <auth id="success">
+        <banner>Authorised users only. Activity may be monitored.</banner>
+    </auth>
+</config-auth>

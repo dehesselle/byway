@@ -1,0 +1,106 @@
+[project]
+name = "pyac"
+version = "0.1.0"
+description = "Userspace Cisco AnyConnect (CSTP) client with an in-process TCP/IP stack"
+readme = "README.md"
+authors = [
+    { name = "René de Hesselle", email = "dehesselle@web.de" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "httpx>=0.27,<0.29",
+    "defusedxml>=0.7.1",
+]
+
+[project.optional-dependencies]
+keyring = ["keyring>=25"]
+
+[project.scripts]
+pyac = "pyac.cli.main:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.24",
+    "pytest-timeout>=2.3",
+    "pytest-cov>=5",
+    "hypothesis>=6.100",
+    "ruff>=0.6",
+    "mypy>=1.11",
+    "dnspython>=2.6",       # differential testing of net/dnswire.py only
+    "scapy>=2.5",           # header-field oracle; build/dissect needs no npcap
+    "trustme>=1.1",         # self-signed certs for the fake gateway
+]
+
+# ---------------------------------------------------------------------------
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "ASYNC", "TID"]
+
+# The sans-IO contract: pyac.net must never perform I/O, read a clock, or use
+# global randomness. Enforced mechanically here and re-checked at runtime by
+# tests/unit/test_sans_io_guard.py, which asserts these modules stay out of
+# sys.modules when pyac.net.stack is imported in a clean subprocess.
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"asyncio".msg = "pyac.net must be sans-IO"
+"socket".msg = "pyac.net must be sans-IO"
+"ssl".msg = "pyac.net must be sans-IO"
+"time".msg = "time is a parameter, not an import"
+"random".msg = "inject an rng callable"
+
+[tool.ruff.lint.per-file-ignores]
+# The banned-api rule above exists solely to keep src/pyac/net/** sans-IO.
+# Ruff cannot express "apply only to this directory", so everywhere else opts
+# out. Only src/pyac/net/** is deliberately absent from this list.
+"src/pyac/*.py" = ["TID251"]
+"src/pyac/auth/**" = ["TID251"]
+"src/pyac/cstp/**" = ["TID251"]
+"src/pyac/runtime/**" = ["TID251"]
+"src/pyac/socks/**" = ["TID251"]
+"src/pyac/cli/**" = ["TID251"]
+"tests/**" = ["TID251"]
+
+# ---------------------------------------------------------------------------
+
+[tool.mypy]
+python_version = "3.12"
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+# The sans-IO core and the protocol codecs carry the correctness risk and have
+# no untyped third-party surface, so they get the strict treatment.
+module = ["pyac.net.*", "pyac.cstp.*"]
+strict = true
+
+[[tool.mypy.overrides]]
+module = ["defusedxml.*"]
+ignore_missing_imports = true
+
+# ---------------------------------------------------------------------------
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+# Non-negotiable: a broken TCP stack hangs forever and would otherwise wedge CI.
+timeout = 30
+addopts = "--strict-markers"
+markers = [
+    "slow: takes more than a second",
+    "needs_gateway: requires a real AnyConnect gateway (never runs in CI)",
+    "linux_only: requires a Linux tun device or network namespace",
+]
+
+[tool.coverage.run]
+source = ["pyac"]
+branch = true

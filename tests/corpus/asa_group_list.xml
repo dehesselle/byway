@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<config-auth client="vpn" type="auth-request" aggregate-auth-version="2">
+    <opaque is-for="sg">
+        <tunnel-group>DefaultWEBVPNGroup</tunnel-group>
+        <aggauth-handle>168430090</aggauth-handle>
+    </opaque>
+    <auth id="main">
+        <title>Login</title>
+        <message>Please enter your username and password.</message>
+        <form>
+            <input type="text" name="username" label="Username:"></input>
+            <input type="password" name="password" label="Password:"></input>
+            <select name="group_list" label="GROUP:">
+                <option>Contractors</option>
+                <option selected="true">Employees</option>
+                <option>Lab</option>
+            </select>
+        </form>
+    </auth>
+</config-auth>

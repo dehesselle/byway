@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+
+jobs:
+  check:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+        python: ["3.12", "3.13"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --dev --python ${{ matrix.python }}
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run mypy src
+      # Layers L0/L1/L2/L4/L5 -- everything except the tun-device conformance
+      # suite, which needs a real kernel and runs in the job below.
+      - run: uv run pytest -q -m "not linux_only and not needs_gateway"
+
+  conformance:
+    # L3: validates our TCP against a real kernel stack over a tun device.
+    # Two instances of our own stack can be consistently wrong together, so
+    # this is the only layer that proves conformance rather than self-agreement.
+    # The same tests run locally under WSL2.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --dev
+      - run: sudo -E $(which uv) run pytest -q -m linux_only
