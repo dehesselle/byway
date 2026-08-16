@@ -16,7 +16,9 @@ import os
 import socket
 import struct
 import sys
+import time
 
+from pyac._logging import configure as configure_logging
 from pyac._pcap import PcapWriter
 from pyac.auth.client import authenticate, build_ssl_context, logout
 from pyac.cli.cmd_probe import parse_gateway
@@ -101,6 +103,10 @@ def print_tunnel(config: TunnelConfig) -> None:
     print(f"mtu       {config.mtu}")
     if config.dns:
         print(f"dns       {', '.join(config.dns)}")
+    else:
+        # Worth calling out: with no DNS servers the gateway is not offering
+        # in-tunnel resolution, so names must be resolved by the host.
+        print(f"dns       none advertised (tunnel-all-dns={str(config.tunnel_all_dns).lower()})")
     if config.default_domain:
         print(f"domain    {config.default_domain}")
     if config.split_include:
@@ -126,6 +132,7 @@ def print_tunnel(config: TunnelConfig) -> None:
 
 
 def run(args: argparse.Namespace) -> int:
+    configure_logging(args.verbose)
     gateway = parse_gateway(args.gateway, pin=args.pin, no_verify=args.no_verify)
     credentials = Credentials(
         username=args.user,
@@ -174,6 +181,7 @@ async def _run(args: argparse.Namespace, gateway: GatewayConfig, credentials: Cr
 
         if session.close_reason:
             print(f"\ntunnel closed: {session.close_reason}")
+        print(session.stats())
     finally:
         await session.aclose()
         if pcap is not None:
@@ -183,9 +191,14 @@ async def _run(args: argparse.Namespace, gateway: GatewayConfig, credentials: Cr
     return 0
 
 
+HEARTBEAT_SECONDS = 30.0
+
+
 async def _dump(session: CstpSession, *, verbose: bool) -> None:
     """Report inbound packets until the tunnel closes or Ctrl-C arrives."""
     total = 0
+    next_heartbeat = time.monotonic() + HEARTBEAT_SECONDS
+
     while not session.closed.is_set():
         # Short waits rather than one long one: on Windows an idle event loop
         # will not notice Ctrl-C until it wakes up.
@@ -198,5 +211,16 @@ async def _dump(session: CstpSession, *, verbose: bool) -> None:
                 print(f"  <- {summarize_ipv4(packet)}")
             elif total == 21:
                 print("  ... (further packets suppressed; use -v to see them all)")
+
+        # An idle tunnel is indistinguishable from a wedged one without this;
+        # the frame counters show that keepalives and DPD are still flowing.
+        if time.monotonic() >= next_heartbeat:
+            next_heartbeat = time.monotonic() + HEARTBEAT_SECONDS
+            elapsed = time.monotonic() - session.started_at
+            sent = sum(session.frames_out.values())
+            received = sum(session.frames_in.values())
+            print(
+                f"  [{elapsed:5.0f}s] {total} data packets, {received} frames in, {sent} frames out"
+            )
 
     print(f"\n{total} packets received, {session.dropped_inbound} dropped")

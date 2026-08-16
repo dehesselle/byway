@@ -104,6 +104,50 @@ def test_unknown_cstp_headers_are_kept_for_reporting() -> None:
     assert config.unknown_headers == (("X-CSTP-Something-New", "42"),)
 
 
+def test_routine_asa_headers_are_not_reported_as_unknown() -> None:
+    """Observed on a real ASA 5.1.5 gateway; all noise, none actionable.
+
+    If these counted as unknown, the genuinely new header that matters would
+    be buried in a wall of routine output.
+    """
+    config = parse(
+        ("X-CSTP-Address", "10.1.2.3"),
+        ("X-CSTP-Version", "1"),
+        ("X-CSTP-Protocol", "Copyright (c) 2004 Cisco Systems, Inc."),
+        ("X-CSTP-Lease-Duration", "1209600"),
+        ("X-CSTP-Session-Timeout-Alert-Interval", "60"),
+        ("X-CSTP-MSIE-Proxy-Lockdown", "true"),
+        ("X-CSTP-Smartcard-Removal-Disconnect", "true"),
+        ("X-CSTP-Routing-Filtering-Ignore", "false"),
+        ("X-CSTP-Quarantine", "false"),
+        ("X-CSTP-Disable-Always-On-VPN", "false"),
+        ("X-CSTP-TCP-Keepalive", "true"),
+    )
+    assert config.unknown_headers == ()
+
+
+def test_post_auth_xml_is_captured_but_kept_out_of_the_report() -> None:
+    """It is kilobytes of MSI provisioning detail that never applies to us."""
+    blob = "<?xml version='1.0'?><config-auth>" + "x" * 5000 + "</config-auth>"
+    config = parse(("X-CSTP-Address", "10.1.2.3"), ("X-CSTP-Post-Auth-XML", blob))
+
+    assert config.post_auth_xml == blob
+    assert config.unknown_headers == ()
+    assert blob not in repr(config)
+
+
+def test_dns_policy_flags() -> None:
+    config = parse(
+        ("X-CSTP-Address", "10.1.2.3"),
+        ("X-CSTP-Tunnel-All-DNS", "false"),
+        ("X-CSTP-Keep", "true"),
+    )
+    assert config.tunnel_all_dns is False
+    assert config.keep_address is True
+    # No X-CSTP-DNS at all: this gateway is not offering in-tunnel resolution.
+    assert config.dns == ()
+
+
 def test_local_network_derives_from_address_and_netmask() -> None:
     config = parse(("X-CSTP-Address", "10.20.30.40"), ("X-CSTP-Netmask", "255.255.255.0"))
     assert config.local_network == ipaddress.IPv4Network("10.20.30.0/24")

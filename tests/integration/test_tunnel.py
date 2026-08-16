@@ -238,6 +238,55 @@ async def test_unknown_frame_types_are_ignored(certs: Path) -> None:
         assert not session.closed.is_set()
 
 
+async def test_frames_are_counted_in_both_directions(certs: Path) -> None:
+    """Control frames are invisible in packet counts.
+
+    Without this accounting, a tunnel that died from a missed keepalive looks
+    exactly like one that was simply idle -- which is precisely the ambiguity
+    that made the first real-gateway disconnect undiagnosable.
+    """
+    async with FakeGateway([], certs_dir=certs) as gateway, session_for(gateway) as session:
+        await wait_for(gateway.tunnel_up)
+        session.send(b"outbound")
+        gateway.send_dpd()
+        gateway.send_packet(b"inbound")
+        await wait_for(session.wake)
+        session.take_inbound()
+
+        for _ in range(50):
+            await asyncio.sleep(0.02)
+            if gateway.dpd_responses:
+                break
+
+    assert session.frames_in["DATA"] == 1
+    assert session.frames_in["DPD_OUT"] == 1
+    assert session.frames_out["DATA"] == 1
+    assert session.frames_out["DPD_RESP"] == 1
+    assert "DPD_RESP=1" in session.stats()
+
+
+async def test_a_failing_background_task_closes_the_tunnel(certs: Path) -> None:
+    """An unsupervised task exception would leave the tunnel silently mute.
+
+    It would stop sending keepalives and simply wait to be dropped by the
+    gateway, reporting nothing useful about why.
+    """
+    async with FakeGateway([], certs_dir=certs) as gateway, session_for(gateway) as session:
+        await wait_for(gateway.tunnel_up)
+
+        boom = RuntimeError("synthetic timer failure")
+
+        async def failing() -> None:
+            raise boom
+
+        task = asyncio.create_task(failing(), name="cstp-timers")
+        task.add_done_callback(session._on_task_done)
+        await wait_for(session.closed)
+
+    assert "cstp-timers failed" in session.close_reason
+    assert "synthetic timer failure" in session.close_reason
+
+
 async def test_compressed_frame_is_a_protocol_error(certs: Path) -> None:
     async with FakeGateway([], certs_dir=certs) as gateway, session_for(gateway) as session:
         await wait_for(gateway.tunnel_up)

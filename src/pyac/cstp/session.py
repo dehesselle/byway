@@ -10,9 +10,11 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 import socket as _socket
 import ssl
-from collections import deque
+import time
+from collections import Counter, deque
 from types import TracebackType
 
 from pyac._pcap import PcapWriter
@@ -28,6 +30,8 @@ from pyac.cstp.framing import (
 )
 from pyac.cstp.handshake import build_connect_request, parse_connect_response, split_header_block
 from pyac.errors import ProtocolParseError, TunnelClosed
+
+log = logging.getLogger("pyac.cstp")
 
 READ_SIZE = 65536
 
@@ -81,6 +85,14 @@ class CstpSession:
         self.dropped_inbound = 0
         self.dropped_outbound = 0
 
+        # Frame accounting. Control frames are invisible in packet counts, so
+        # without this a tunnel that dies from a missed keepalive looks
+        # identical to one that was simply idle.
+        self.frames_in: Counter[str] = Counter()
+        self.frames_out: Counter[str] = Counter()
+        self.started_at = 0.0
+        self.last_frame_at = 0.0
+
     # --- IpLink ------------------------------------------------------------
 
     @property
@@ -106,6 +118,7 @@ class CstpSession:
             self.dropped_outbound += 1
             return
         self._outbound.append(encode_frame(PacketType.DATA, packet))
+        self.frames_out["DATA"] += 1
         self._writer_wake.set()
 
     def take_inbound(self) -> list[bytes]:
@@ -162,12 +175,30 @@ class CstpSession:
         if remainder:
             self._consume(remainder)
 
-        self._tasks = [
-            asyncio.create_task(self._read_loop(), name="cstp-reader"),
-            asyncio.create_task(self._write_loop(), name="cstp-writer"),
-            asyncio.create_task(self._timer_loop(), name="cstp-timers"),
-        ]
+        self.started_at = time.monotonic()
+        self.last_frame_at = self.started_at
+
+        for coroutine, name in (
+            (self._read_loop(), "cstp-reader"),
+            (self._write_loop(), "cstp-writer"),
+            (self._timer_loop(), "cstp-timers"),
+        ):
+            task = asyncio.create_task(coroutine, name=name)
+            # Without this an exception in a background task vanishes: the
+            # tunnel would stop sending keepalives and simply wait to be
+            # dropped, with nothing to say why.
+            task.add_done_callback(self._on_task_done)
+            self._tasks.append(task)
+
         return self._config
+
+    def _on_task_done(self, task: asyncio.Task[None]) -> None:
+        if task.cancelled():
+            return
+        exception = task.exception()
+        if exception is not None:
+            log.error("%s failed: %r", task.get_name(), exception)
+            self._mark_closed(f"{task.get_name()} failed: {exception!r}")
 
     async def aclose(self) -> None:
         """Tell the gateway we are going, then tear everything down."""
@@ -209,9 +240,27 @@ class CstpSession:
             self._closed.set()
         self._wake.set()  # release a driver waiting for packets
 
+    def _queue(self, frame: bytes, name: str, *, urgent: bool = False) -> None:
+        """Queue an outbound control frame and record it."""
+        if urgent:
+            self._outbound.appendleft(frame)
+        else:
+            self._outbound.append(frame)
+        self.frames_out[name] += 1
+        log.debug("-> %s", name)
+        self._writer_wake.set()
+
     def _consume(self, data: bytes) -> None:
         """Feed raw stream bytes through the framer and dispatch each frame."""
         for frame in self._decoder.feed(data):
+            self.last_frame_at = time.monotonic()
+            try:
+                name = PacketType(frame.type).name
+            except ValueError:
+                name = f"UNKNOWN({frame.type})"
+            self.frames_in[name] += 1
+            log.debug("<- %s (%d bytes)", name, len(frame.payload))
+
             if frame.type == PacketType.DATA:
                 if len(self._inbound) >= MAX_INBOUND_BACKLOG:
                     self.dropped_inbound += 1
@@ -224,8 +273,7 @@ class CstpSession:
             elif frame.type == PacketType.DPD_OUT:
                 # Jump the queue. A full data backlog must never delay a DPD
                 # response -- that is how tunnels die under load.
-                self._outbound.appendleft(FRAME_DPD_RESP)
-                self._writer_wake.set()
+                self._queue(FRAME_DPD_RESP, "DPD_RESP", urgent=True)
 
             elif frame.type == PacketType.DPD_RESP:
                 self._dpd_outstanding = 0
@@ -283,32 +331,48 @@ class CstpSession:
             self._mark_closed(f"tunnel write failed: {exc}")
 
     async def _timer_loop(self) -> None:
-        """Send keepalives and DPD probes, and notice a dead peer."""
+        """Send keepalives and DPD probes, and notice a dead peer.
+
+        Driven off absolute deadlines rather than an accumulator, so each
+        timer fires on its own period instead of being rounded up to a
+        multiple of the shorter one -- with dpd=30 and keepalive=20 an
+        accumulator would not send the first DPD until t=40.
+        """
         config = self.config
-        dpd = config.dpd or 30
-        keepalive = config.keepalive or 20
-        interval = max(1, min(dpd, keepalive))
-        elapsed_dpd = 0
-        elapsed_keepalive = 0
+        dpd = max(1, config.dpd or 30)
+        keepalive = max(1, config.keepalive or 20)
 
-        try:
-            while True:
-                await asyncio.sleep(interval)
-                elapsed_dpd += interval
-                elapsed_keepalive += interval
+        now = time.monotonic()
+        next_dpd = now + dpd
+        next_keepalive = now + keepalive
 
-                if elapsed_dpd >= dpd:
-                    elapsed_dpd = 0
-                    if self._dpd_outstanding >= 2:
-                        self._mark_closed(f"no DPD response after {self._dpd_outstanding} probes")
-                        return
-                    self._dpd_outstanding += 1
-                    self._outbound.append(FRAME_DPD_OUT)
-                    self._writer_wake.set()
+        while True:
+            now = time.monotonic()
+            await asyncio.sleep(max(0.1, min(next_dpd, next_keepalive) - now))
+            now = time.monotonic()
 
-                if elapsed_keepalive >= keepalive:
-                    elapsed_keepalive = 0
-                    self._outbound.append(FRAME_KEEPALIVE)
-                    self._writer_wake.set()
-        except asyncio.CancelledError:
-            raise
+            if now >= next_dpd:
+                next_dpd = now + dpd
+                if self._dpd_outstanding >= 2:
+                    self._mark_closed(f"no DPD response after {self._dpd_outstanding} probes")
+                    return
+                self._dpd_outstanding += 1
+                self._queue(FRAME_DPD_OUT, "DPD_OUT")
+
+            if now >= next_keepalive:
+                next_keepalive = now + keepalive
+                self._queue(FRAME_KEEPALIVE, "KEEPALIVE")
+
+    def stats(self) -> str:
+        """A one-line account of what actually crossed the tunnel."""
+        elapsed = time.monotonic() - self.started_at if self.started_at else 0.0
+        quiet = time.monotonic() - self.last_frame_at if self.last_frame_at else 0.0
+
+        def render(counter: Counter[str]) -> str:
+            return ", ".join(f"{name}={count}" for name, count in sorted(counter.items())) or "none"
+
+        return (
+            f"up {elapsed:.1f}s, last frame {quiet:.1f}s ago\n"
+            f"  received  {render(self.frames_in)}\n"
+            f"  sent      {render(self.frames_out)}"
+        )

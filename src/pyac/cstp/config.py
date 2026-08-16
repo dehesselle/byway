@@ -16,6 +16,31 @@ from urllib.parse import unquote
 # missing or unparseable. Getting this wrong is the classic silent-hang bug.
 DEFAULT_MTU = 1406
 
+# Headers a real ASA always sends that carry nothing we act on. They are
+# recognised explicitly so that ``unknown_headers`` means "genuinely new
+# behaviour worth reporting" rather than a wall of routine noise.
+KNOWN_UNUSED_HEADERS = frozenset(
+    {
+        "x-cstp-version",
+        "x-cstp-protocol",
+        "x-cstp-lease-duration",
+        "x-cstp-session-timeout-alert-interval",
+        "x-cstp-msie-proxy-lockdown",
+        "x-cstp-msie-proxy-pac-url",
+        "x-cstp-msie-proxy-auto-detect",
+        "x-cstp-smartcard-removal-disconnect",
+        "x-cstp-routing-filtering-ignore",
+        "x-cstp-quarantine",
+        "x-cstp-disable-always-on-vpn",
+        "x-cstp-tcp-keepalive",
+        "x-cstp-license",
+        "x-cstp-dyndns",
+        "x-cstp-client-bypass-protocol",
+        "x-cstp-address-ip6",
+        "x-cstp-netmask-ip6",
+    }
+)
+
 
 @dataclass(frozen=True, slots=True)
 class TunnelConfig:
@@ -48,6 +73,20 @@ class TunnelConfig:
     """Must be absent: we never advertise ``X-CSTP-Accept-Encoding``, so a
     value here means the gateway compressed anyway and our assumptions are
     wrong for this device."""
+
+    tunnel_all_dns: bool = False
+    """Whether the gateway wants *all* DNS sent through the tunnel. When false
+    and no DNS servers are advertised, in-tunnel resolution is not on offer
+    and names must be resolved by the host instead."""
+
+    keep_address: bool = False
+    """``X-CSTP-Keep`` -- the gateway intends to reassign the same address on
+    reconnect, which is what lets established connections survive a rekey."""
+
+    post_auth_xml: str | None = field(default=None, repr=False)
+    """``X-CSTP-Post-Auth-XML``: a multi-kilobyte client-provisioning document
+    describing MSI packages and profiles. Nothing in it applies to us, so it
+    is captured rather than printed."""
 
     unknown_headers: tuple[tuple[str, str], ...] = field(default=(), repr=False)
     """Anything we did not recognise, kept so ``pyac info`` can show it and new
@@ -120,6 +159,9 @@ def parse_tunnel_config(headers: list[tuple[str, str]]) -> TunnelConfig:
     rekey_method: str | None = None
     banner: str | None = None
     content_encoding: str | None = None
+    tunnel_all_dns = False
+    keep_address = False
+    post_auth_xml: str | None = None
     unknown: list[tuple[str, str]] = []
 
     for raw_name, raw_value in headers:
@@ -170,6 +212,14 @@ def parse_tunnel_config(headers: list[tuple[str, str]]) -> TunnelConfig:
             banner = unquote(value)  # gateways percent-encode the banner
         elif name == "x-cstp-content-encoding":
             content_encoding = value
+        elif name == "x-cstp-tunnel-all-dns":
+            tunnel_all_dns = value.lower() == "true"
+        elif name == "x-cstp-keep":
+            keep_address = value.lower() == "true"
+        elif name == "x-cstp-post-auth-xml":
+            post_auth_xml = value
+        elif name in KNOWN_UNUSED_HEADERS:
+            pass
         elif name.startswith(("x-cstp-", "x-dtls")):
             unknown.append((raw_name.strip(), value))
 
@@ -193,5 +243,8 @@ def parse_tunnel_config(headers: list[tuple[str, str]]) -> TunnelConfig:
         rekey_method=rekey_method,
         banner=banner,
         content_encoding=content_encoding,
+        tunnel_all_dns=tunnel_all_dns,
+        keep_address=keep_address,
+        post_auth_xml=post_auth_xml,
         unknown_headers=tuple(unknown),
     )
