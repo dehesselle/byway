@@ -207,6 +207,23 @@ def _check_posture_required(text: str) -> None:
         )
 
 
+async def logout(gateway: GatewayConfig, session_token: str) -> None:
+    """Release the session on the gateway.
+
+    Not optional housekeeping: gateways enforce concurrent-session limits, so
+    leaked sessions eventually lock the user out of their own VPN with no
+    obvious cause. Best-effort -- a failure here must never mask the real
+    reason we are shutting down.
+    """
+    context = build_ssl_context(gateway)
+    with contextlib.suppress(Exception):
+        async with _new_client(gateway, context) as client:
+            await client.get(
+                "/+webvpn+/webvpn_logout.html",
+                headers={"Cookie": f"webvpn={session_token}"},
+            )
+
+
 async def probe_gateway(gateway: GatewayConfig) -> GatewayInfo:
     """Ask the gateway what it wants, without sending any credential.
 

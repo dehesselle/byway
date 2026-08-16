@@ -11,7 +11,9 @@ us raw IP packets and an in-process TCP/IP stack turns them back into streams.
 Access is through a local SOCKS5 proxy (so `ssh` and `curl` work unchanged) and an
 in-process async API.
 
-> **Status: in development.** See `docs/` for the milestone the code has reached.
+> **Status: in development.** Milestone M2 — authentication and the CSTP tunnel work; the
+> userspace TCP/IP stack does not exist yet, so `pyac up --dump-only` reports the IP traffic
+> the gateway sends rather than doing anything with it.
 
 ## Why you might want this
 
