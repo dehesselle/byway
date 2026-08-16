@@ -13,7 +13,6 @@ import asyncio
 import contextlib
 import getpass
 import os
-import socket
 import struct
 import sys
 import time
@@ -25,9 +24,12 @@ from pyac.cli.cmd_probe import parse_gateway
 from pyac.config import Credentials, GatewayConfig
 from pyac.cstp.config import TunnelConfig
 from pyac.cstp.session import CstpSession
-from pyac.errors import PyacError
+from pyac.errors import ProtocolParseError, PyacError
+from pyac.net.icmp import build_echo_request, parse_icmp
+from pyac.net.ipv4 import PROTO_ICMP, PROTO_TCP, PROTO_UDP, build_ipv4, parse_ipv4
 
 _PROTOCOLS = {1: "icmp", 6: "tcp", 17: "udp", 47: "gre", 50: "esp"}
+_ICMP_TYPES = {0: "echo-reply", 3: "unreachable", 8: "echo-request", 11: "ttl-exceeded"}
 
 
 def register(
@@ -60,6 +62,24 @@ def register(
         action="store_true",
         help="report inbound IP packets instead of running a network stack",
     )
+    parser.add_argument(
+        "--ping",
+        metavar="HOST",
+        help="send ICMP echo through the tunnel every few seconds (real traffic)",
+    )
+    parser.add_argument(
+        "--ping-interval", type=float, default=5.0, help="seconds between pings (default 5)"
+    )
+    parser.add_argument(
+        "--no-client-dpd",
+        action="store_true",
+        help="diagnostic: answer the gateway's DPD but never send our own",
+    )
+    parser.add_argument(
+        "--no-coalesce",
+        action="store_true",
+        help="diagnostic: write one frame per TLS record instead of batching",
+    )
     parser.set_defaults(handler=run)
 
 
@@ -73,29 +93,25 @@ def read_password(from_stdin: bool) -> str:
 
 
 def summarize_ipv4(packet: bytes) -> str:
-    """A one-line description of an IP packet, for --dump-only.
+    """A one-line description of an IP packet, for --dump-only."""
+    try:
+        header, payload = parse_ipv4(packet)
+    except ProtocolParseError as exc:
+        return f"unparseable ({len(packet)} bytes): {exc}"
 
-    Superseded in M3 by the real parser in ``pyac.net.ipv4``; this exists so
-    M2 can show that the tunnel is carrying plausible traffic.
-    """
-    if len(packet) < 20:
-        return f"runt ({len(packet)} bytes)"
-    version = packet[0] >> 4
-    if version != 4:
-        return f"IPv{version} ({len(packet)} bytes)"
+    name = _PROTOCOLS.get(header.protocol, str(header.protocol))
+    detail = ""
 
-    protocol = packet[9]
-    source = socket.inet_ntoa(packet[12:16])
-    destination = socket.inet_ntoa(packet[16:20])
-    name = _PROTOCOLS.get(protocol, str(protocol))
+    if header.protocol == PROTO_ICMP:
+        with contextlib.suppress(ProtocolParseError):
+            message = parse_icmp(payload)
+            kind = _ICMP_TYPES.get(message.type, f"type {message.type}")
+            detail = f" {kind} id={message.ident} seq={message.sequence}"
+    elif header.protocol in (PROTO_TCP, PROTO_UDP) and len(payload) >= 4:
+        source_port, destination_port = struct.unpack_from("!HH", payload)
+        detail = f" {source_port}->{destination_port}"
 
-    ports = ""
-    header_length = (packet[0] & 0x0F) * 4
-    if protocol in (6, 17) and len(packet) >= header_length + 4:
-        source_port, destination_port = struct.unpack_from("!HH", packet, header_length)
-        ports = f" {source_port}->{destination_port}"
-
-    return f"{name:<4} {source} > {destination}{ports}  ({len(packet)} bytes)"
+    return f"{name:<4} {header.source} > {header.destination}{detail}  ({len(packet)} bytes)"
 
 
 def print_tunnel(config: TunnelConfig) -> None:
@@ -164,6 +180,8 @@ async def _run(args: argparse.Namespace, gateway: GatewayConfig, credentials: Cr
         user_agent=gateway.user_agent,
         mtu=args.mtu or 1406,
         pcap=pcap,
+        client_dpd=not args.no_client_dpd,
+        coalesce=not args.no_coalesce,
     )
 
     try:
@@ -173,11 +191,23 @@ async def _run(args: argparse.Namespace, gateway: GatewayConfig, credentials: Cr
             print(f"\nwriting {args.pcap}")
         print("\ntunnel is up; press Ctrl-C to disconnect")
 
-        if args.dump_only:
+        if args.ping:
+            pinger = asyncio.create_task(
+                _ping_loop(session, args.ping, args.ping_interval), name="pyac-ping"
+            )
+        else:
+            pinger = None
+
+        if args.dump_only or args.ping:
             await _dump(session, verbose=args.verbose > 0)
         else:
             print("(no network stack yet -- rerun with --dump-only)")
             await session.closed.wait()
+
+        if pinger is not None:
+            pinger.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await pinger
 
         if session.close_reason:
             print(f"\ntunnel closed: {session.close_reason}")
@@ -189,6 +219,30 @@ async def _run(args: argparse.Namespace, gateway: GatewayConfig, credentials: Cr
         await logout(gateway, success.session_token)
 
     return 0
+
+
+async def _ping_loop(session: CstpSession, target: str, interval: float) -> None:
+    """Send ICMP echo requests through the tunnel.
+
+    This is real data on the wire, which distinguishes a gateway that drops
+    idle tunnels from one that objects to how we send control frames. It is
+    also the first half of `pyac ping`.
+    """
+    ident = os.getpid() & 0xFFFF
+    sequence = 0
+
+    while True:
+        sequence += 1
+        packet = build_ipv4(
+            source=session.config.address,
+            destination=target,
+            protocol=PROTO_ICMP,
+            payload=build_echo_request(ident, sequence, b"pyac" * 4),
+            identification=sequence,
+        )
+        session.send(packet)
+        print(f"  -> icmp echo request to {target} seq={sequence}")
+        await asyncio.sleep(interval)
 
 
 HEARTBEAT_SECONDS = 30.0

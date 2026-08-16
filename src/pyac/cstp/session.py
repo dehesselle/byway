@@ -58,6 +58,8 @@ class CstpSession:
         local_hostname: str | None = None,
         mtu: int = 1406,
         pcap: PcapWriter | None = None,
+        client_dpd: bool = True,
+        coalesce: bool = True,
     ) -> None:
         self._host = host
         self._port = port
@@ -67,6 +69,10 @@ class CstpSession:
         self._local_hostname = local_hostname or _socket.gethostname()
         self._requested_mtu = mtu
         self._pcap = pcap
+        # Both default to the normal behaviour; they exist so a gateway that
+        # dislikes either can be identified rather than guessed at.
+        self._client_dpd = client_dpd
+        self._coalesce = coalesce
 
         self._reader: asyncio.StreamReader | None = None
         self._writer: asyncio.StreamWriter | None = None
@@ -320,11 +326,19 @@ class CstpSession:
                 if not self._outbound:
                     continue
 
-                # One TLS record per batch rather than per packet.
-                batch = b"".join(self._outbound)
-                self._outbound.clear()
-                self._writer.write(batch)
-                await self._writer.drain()
+                if self._coalesce:
+                    # One TLS record per batch rather than per packet: the
+                    # largest cheap throughput win available.
+                    batch = b"".join(self._outbound)
+                    self._outbound.clear()
+                    self._writer.write(batch)
+                    await self._writer.drain()
+                else:
+                    # One frame per record, draining between each, for
+                    # gateways that turn out to mind.
+                    while self._outbound:
+                        self._writer.write(self._outbound.popleft())
+                        await self._writer.drain()
         except asyncio.CancelledError:
             raise
         except (OSError, ssl.SSLError) as exc:
@@ -351,13 +365,15 @@ class CstpSession:
             await asyncio.sleep(max(0.1, min(next_dpd, next_keepalive) - now))
             now = time.monotonic()
 
-            if now >= next_dpd:
+            if now >= next_dpd and self._client_dpd:
                 next_dpd = now + dpd
                 if self._dpd_outstanding >= 2:
                     self._mark_closed(f"no DPD response after {self._dpd_outstanding} probes")
                     return
                 self._dpd_outstanding += 1
                 self._queue(FRAME_DPD_OUT, "DPD_OUT")
+            elif now >= next_dpd:
+                next_dpd = now + dpd
 
             if now >= next_keepalive:
                 next_keepalive = now + keepalive
