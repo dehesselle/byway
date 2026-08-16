@@ -22,9 +22,13 @@ from pyac.config import GatewayConfig
 from pyac.errors import PyacError
 
 
-def register(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+def register(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+    shared: argparse.ArgumentParser,
+) -> None:
     parser = subparsers.add_parser(
         "probe",
+        parents=[shared],
         help="show a gateway's authentication form and certificate",
         description=(
             "POST the initial aggregate-auth XML and report what came back: the "

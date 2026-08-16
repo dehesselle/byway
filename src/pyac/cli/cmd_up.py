@@ -28,9 +28,13 @@ from pyac.errors import PyacError
 _PROTOCOLS = {1: "icmp", 6: "tcp", 17: "udp", 47: "gre", 50: "esp"}
 
 
-def register(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+def register(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+    shared: argparse.ArgumentParser,
+) -> None:
     parser = subparsers.add_parser(
         "up",
+        parents=[shared],
         help="authenticate and establish the tunnel",
         description="Authenticate against the gateway and hold the CSTP tunnel open.",
     )
