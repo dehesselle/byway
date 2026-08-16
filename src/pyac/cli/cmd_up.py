@@ -76,9 +76,9 @@ def register(
         help="diagnostic: answer the gateway's DPD but never send our own",
     )
     parser.add_argument(
-        "--no-coalesce",
+        "--coalesce",
         action="store_true",
-        help="diagnostic: write one frame per TLS record instead of batching",
+        help="batch frames into one TLS record (known to break Cisco ASA; see docs/protocol.md)",
     )
     parser.set_defaults(handler=run)
 
@@ -181,7 +181,7 @@ async def _run(args: argparse.Namespace, gateway: GatewayConfig, credentials: Cr
         mtu=args.mtu or 1406,
         pcap=pcap,
         client_dpd=not args.no_client_dpd,
-        coalesce=not args.no_coalesce,
+        coalesce=args.coalesce,
     )
 
     try:

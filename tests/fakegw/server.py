@@ -209,6 +209,10 @@ class FakeGateway:
             chunk = await reader.read(65536)
             if not chunk:
                 return
+            # Note: this cannot observe TLS record boundaries. asyncio's SSL
+            # transport concatenates decrypted records into the stream, so the
+            # one-frame-per-record invariant is tested in
+            # tests/unit/test_write_strategy.py instead.
             for frame in decoder.feed(chunk):
                 if frame.type == PacketType.DATA:
                     self.received_packets.append(frame.payload)

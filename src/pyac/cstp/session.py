@@ -59,7 +59,7 @@ class CstpSession:
         mtu: int = 1406,
         pcap: PcapWriter | None = None,
         client_dpd: bool = True,
-        coalesce: bool = True,
+        coalesce: bool = False,
     ) -> None:
         self._host = host
         self._port = port
@@ -69,9 +69,12 @@ class CstpSession:
         self._local_hostname = local_hostname or _socket.gethostname()
         self._requested_mtu = mtu
         self._pcap = pcap
-        # Both default to the normal behaviour; they exist so a gateway that
-        # dislikes either can be identified rather than guessed at.
         self._client_dpd = client_dpd
+
+        # One CSTP frame per TLS record. This is not a tuning knob: a real ASA
+        # (5.1.5) silently drops the connection the moment two frames arrive in
+        # one record. See docs/protocol.md -- openconnect issues one SSL_write
+        # per packet, so gateways have never had to handle batched frames.
         self._coalesce = coalesce
 
         self._reader: asyncio.StreamReader | None = None
@@ -316,6 +319,31 @@ class CstpSession:
             # resynchronise on, so the tunnel cannot be salvaged.
             self._mark_closed(f"protocol error: {exc}")
 
+    async def _flush_outbound(self) -> None:
+        """Write every queued frame.
+
+        One ``write()`` call per frame, which asyncio turns into one
+        ``SSLObject.write()`` and therefore one TLS record. That mapping is
+        the whole point: an ASA that receives two frames in a single record
+        drops the connection without warning. See docs/protocol.md.
+        """
+        writer = self._writer
+        if writer is None:
+            return
+
+        if self._coalesce:
+            # Opt-in only, and known to break ASA. Retained because a gateway
+            # that tolerates it would see a real throughput win.
+            batch = b"".join(self._outbound)
+            self._outbound.clear()
+            writer.write(batch)
+            await writer.drain()
+            return
+
+        while self._outbound:
+            writer.write(self._outbound.popleft())
+            await writer.drain()
+
     async def _write_loop(self) -> None:
         assert self._writer is not None
         try:
@@ -326,19 +354,7 @@ class CstpSession:
                 if not self._outbound:
                     continue
 
-                if self._coalesce:
-                    # One TLS record per batch rather than per packet: the
-                    # largest cheap throughput win available.
-                    batch = b"".join(self._outbound)
-                    self._outbound.clear()
-                    self._writer.write(batch)
-                    await self._writer.drain()
-                else:
-                    # One frame per record, draining between each, for
-                    # gateways that turn out to mind.
-                    while self._outbound:
-                        self._writer.write(self._outbound.popleft())
-                        await self._writer.drain()
+                await self._flush_outbound()
         except asyncio.CancelledError:
             raise
         except (OSError, ssl.SSLError) as exc:

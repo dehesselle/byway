@@ -238,6 +238,27 @@ async def test_unknown_frame_types_are_ignored(certs: Path) -> None:
         assert not session.closed.is_set()
 
 
+async def test_many_queued_frames_all_arrive_intact(certs: Path) -> None:
+    """Whatever the write strategy, nothing may be lost or reordered.
+
+    Note this cannot observe TLS record boundaries -- asyncio hands decrypted
+    plaintext to StreamReader as a stream, concatenating records. The
+    one-frame-per-record invariant is asserted in
+    tests/unit/test_write_strategy.py, at the layer where it is decided.
+    """
+    async with FakeGateway([], certs_dir=certs) as gateway, session_for(gateway) as session:
+        await wait_for(gateway.tunnel_up)
+        for index in range(6):
+            session.send(bytes([index]) * 40)
+
+        for _ in range(250):
+            if len(gateway.received_packets) >= 6:
+                break
+            await asyncio.sleep(0.02)
+
+    assert gateway.received_packets == [bytes([i]) * 40 for i in range(6)]
+
+
 async def test_frames_are_counted_in_both_directions(certs: Path) -> None:
     """Control frames are invisible in packet counts.
 
