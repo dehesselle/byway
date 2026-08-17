@@ -19,16 +19,19 @@ from typing import TYPE_CHECKING, Any
 __all__ = [
     "Credentials",
     "GatewayConfig",
+    "SyncVpnClient",
     "TunnelConfig",
     "VpnClient",
     "__version__",
     "connect",
+    "connect_sync",
 ]
 
 if TYPE_CHECKING:
     from pyac.api import VpnClient, connect
     from pyac.config import Credentials, GatewayConfig
     from pyac.cstp.config import TunnelConfig
+    from pyac.sync_api import SyncVpnClient, connect_sync
 
 
 def __getattr__(name: str) -> Any:
@@ -47,6 +50,10 @@ def __getattr__(name: str) -> Any:
         from pyac import api
 
         return getattr(api, name)
+    if name in ("SyncVpnClient", "connect_sync"):
+        from pyac import sync_api
+
+        return getattr(sync_api, name)
     if name in ("Credentials", "GatewayConfig"):
         from pyac import config
 
