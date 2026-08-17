@@ -27,6 +27,8 @@ from pyac.cstp.session import CstpSession
 from pyac.errors import ProtocolParseError, PyacError
 from pyac.net.icmp import build_echo_request, parse_icmp
 from pyac.net.ipv4 import PROTO_ICMP, PROTO_TCP, PROTO_UDP, build_ipv4, parse_ipv4
+from pyac.runtime.driver import Driver
+from pyac.socks import Socks5Server
 
 _PROTOCOLS = {1: "icmp", 6: "tcp", 17: "udp", 47: "gre", 50: "esp"}
 _ICMP_TYPES = {0: "echo-reply", 3: "unreachable", 8: "echo-request", 11: "ttl-exceeded"}
@@ -69,6 +71,29 @@ def register(
     )
     parser.add_argument(
         "--ping-interval", type=float, default=5.0, help="seconds between pings (default 5)"
+    )
+    parser.add_argument(
+        "--socks",
+        nargs="?",
+        const="127.0.0.1:1080",
+        metavar="[HOST:]PORT",
+        help="serve SOCKS5 for the tunnel (default 127.0.0.1:1080)",
+    )
+    parser.add_argument(
+        "--socks-auth",
+        metavar="USER:PASS",
+        help="require these RFC 1929 credentials from SOCKS clients",
+    )
+    parser.add_argument(
+        "--socks-allow-remote",
+        action="store_true",
+        help="permit binding a non-loopback address (opens the VPN to the network)",
+    )
+    parser.add_argument(
+        "--route-policy",
+        choices=("auto", "all"),
+        default="auto",
+        help="auto refuses addresses outside the advertised split routes; all tries anyway",
     )
     parser.add_argument(
         "--no-client-dpd",
@@ -198,10 +223,12 @@ async def _run(args: argparse.Namespace, gateway: GatewayConfig, credentials: Cr
         else:
             pinger = None
 
-        if args.dump_only or args.ping:
+        if args.socks:
+            await _serve_socks(session, args)
+        elif args.dump_only or args.ping:
             await _dump(session, verbose=args.verbose > 0)
         else:
-            print("(no network stack yet -- rerun with --dump-only)")
+            print("(nothing to do: pass --socks to serve a proxy, or --dump-only)")
             await session.closed.wait()
 
         if pinger is not None:
@@ -219,6 +246,61 @@ async def _run(args: argparse.Namespace, gateway: GatewayConfig, credentials: Cr
         await logout(gateway, success.session_token)
 
     return 0
+
+
+def parse_listen(spec: str) -> tuple[str, int]:
+    """``1080``, ``127.0.0.1:1080``, or ``[::1]:1080``."""
+    if ":" not in spec:
+        return "127.0.0.1", int(spec)
+    host, _, port = spec.rpartition(":")
+    return host.strip("[]") or "127.0.0.1", int(port)
+
+
+def parse_socks_auth(spec: str | None) -> tuple[str | None, str | None]:
+    if spec is None:
+        return None, None
+    username, separator, password = spec.partition(":")
+    if not separator:
+        raise PyacError("--socks-auth expects USER:PASS")
+    return username, password
+
+
+async def _serve_socks(session: CstpSession, args: argparse.Namespace) -> None:
+    """Run the proxy until the tunnel closes or Ctrl-C arrives."""
+    host, port = parse_listen(args.socks)
+    username, password = parse_socks_auth(args.socks_auth)
+
+    driver = Driver(session)
+    driver.start()
+    proxy = Socks5Server(
+        driver,
+        host=host,
+        port=port,
+        username=username,
+        password=password,
+        allow_non_loopback=args.socks_allow_remote,
+        route_policy=args.route_policy,
+    )
+    try:
+        await proxy.start()
+        print(f"\nsocks5    {proxy.address}" + ("  (authenticated)" if username else ""))
+        if username is None:
+            # Loopback still means every local process, including a browser
+            # tab running someone else's JavaScript.
+            print("          no authentication: any local process can use this")
+        print(f"\ncurl --socks5 {proxy.address} http://<ip-inside-the-vpn>/")
+        print("\npress Ctrl-C to disconnect")
+
+        while not session.closed.is_set():
+            # Short waits: an idle proactor loop on Windows will not notice
+            # Ctrl-C until something wakes it.
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(session.closed.wait(), timeout=0.5)
+
+        print(f"\nsocks: {proxy.connections} connections, {proxy.rejected} rejected")
+    finally:
+        await proxy.aclose()
+        await driver.aclose()
 
 
 async def _ping_loop(session: CstpSession, target: str, interval: float) -> None:

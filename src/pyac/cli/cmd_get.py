@@ -33,9 +33,9 @@ from pyac.auth.client import authenticate, build_ssl_context, logout
 from pyac.cli.cmd_probe import parse_gateway
 from pyac.cli.cmd_up import read_password
 from pyac.config import Credentials, GatewayConfig
-from pyac.cstp.config import TunnelConfig
 from pyac.cstp.session import CstpSession
 from pyac.errors import ProtocolParseError, PyacError, RouteNotAllowed
+from pyac.routing import describe_routes, route_allows
 from pyac.runtime.driver import Driver
 
 DEFAULT_BODY_LIMIT = 8 * 1024 * 1024
@@ -228,35 +228,6 @@ def decode_chunked(body: bytes) -> bytes:
             raise ProtocolParseError(f"truncated chunk: wanted {size}, have {len(rest)}")
         chunks.append(rest[:size])
         rest = rest[size:].removeprefix(b"\r\n")
-
-
-# --- routing ---------------------------------------------------------------
-
-
-def route_allows(config: TunnelConfig, host: str) -> bool:
-    """Whether the gateway's split routes cover ``host``.
-
-    A split-tunnel gateway silently discards packets for anything outside its
-    include list, so the symptom is a connection that hangs until the timeout
-    with no explanation. Saying so up front costs one comparison.
-    """
-    address = ipaddress.IPv4Address(host)
-    if any(address in network for network in config.split_exclude):
-        return False
-    if not config.split_include:
-        return True  # no include list means full tunnel
-    if address in ipaddress.IPv4Network(f"{config.address}/{config.netmask}", strict=False):
-        return True  # our own subnet is always reachable
-    return any(address in network for network in config.split_include)
-
-
-def describe_routes(config: TunnelConfig) -> str:
-    if not config.split_include:
-        return "full tunnel"
-    text = ", ".join(str(network) for network in config.split_include)
-    if config.split_exclude:
-        text += " except " + ", ".join(str(network) for network in config.split_exclude)
-    return text
 
 
 # --- the command -----------------------------------------------------------
