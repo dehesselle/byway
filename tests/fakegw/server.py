@@ -81,7 +81,12 @@ class FakeGateway:
     down the tunnel -- which turns the fake gateway into a whole network, so a
     real HTTP request can be served through the full stack."""
 
+    address_per_connect: bool = False
+    """Hand out a fresh ``X-CSTP-Address`` each time, as a real ASA does --
+    which is what makes reconnection visible to everything above the link."""
+
     requests: list[Request] = field(default_factory=list)
+    connects: int = 0
     connect_headers: dict[str, str] = field(default_factory=dict)
     received_packets: list[bytes] = field(default_factory=list)
     dpd_responses: int = 0
@@ -118,8 +123,12 @@ class FakeGateway:
     ) -> None:
         if self._server is not None:
             self._server.close()
+            # Bounded: from Python 3.12 wait_closed() also waits for in-flight
+            # handlers, so a client still holding the tunnel open would hang
+            # teardown indefinitely rather than fail the test.
             with contextlib.suppress(Exception):
-                await self._server.wait_closed()
+                async with asyncio.timeout(2):
+                    await self._server.wait_closed()
 
     @property
     def port(self) -> int:
@@ -199,10 +208,11 @@ class FakeGateway:
         self, request: Request, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
     ) -> None:
         self.connect_headers = dict(request.headers)
+        self.connects += 1
         self._tunnel_writer = writer
 
         head = f"HTTP/1.1 {self.tunnel_status}\r\n"
-        head += "".join(f"{name}: {value}\r\n" for name, value in self.tunnel_headers)
+        head += "".join(f"{name}: {value}\r\n" for name, value in self._headers_for_connect())
         writer.write((head + "\r\n").encode())
         await writer.drain()
 
@@ -234,6 +244,15 @@ class FakeGateway:
                 elif frame.type == PacketType.DISCONN:
                     return
             await writer.drain()
+
+    def _headers_for_connect(self) -> list[tuple[str, str]]:
+        if not self.address_per_connect:
+            return self.tunnel_headers
+        assigned = f"10.20.30.{39 + self.connects}"
+        return [
+            (name, assigned if name.lower() == "x-cstp-address" else value)
+            for name, value in self.tunnel_headers
+        ]
 
     def _route(self, packet: bytes) -> None:
         """Hand an inbound packet to the peer, if there is one."""

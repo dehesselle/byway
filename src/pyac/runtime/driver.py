@@ -20,8 +20,10 @@ import contextlib
 import logging
 import secrets
 import time
+from dataclasses import replace
 from types import TracebackType
 
+from pyac._async import first_of
 from pyac.cstp.link import IpLink
 from pyac.errors import ConnectionTimeout, NetworkError
 from pyac.net.events import (
@@ -47,16 +49,6 @@ MAX_IDLE_MS = 500
 
 def monotonic_ms() -> int:
     return int(time.monotonic() * 1000)
-
-
-async def first_of(*events: asyncio.Event, seconds: float | None = None) -> None:
-    """Wait until any of ``events`` is set, cancelling the rest."""
-    waiters = [asyncio.ensure_future(event.wait()) for event in events]
-    try:
-        await asyncio.wait(waiters, timeout=seconds, return_when=asyncio.FIRST_COMPLETED)
-    finally:
-        for waiter in waiters:
-            waiter.cancel()
 
 
 class TcpStream:
@@ -180,6 +172,7 @@ class Driver:
         self._wake = asyncio.Event()
         self._task: asyncio.Task[None] | None = None
         self._icmp_ident = secrets.randbits(16)
+        self.address_changes = 0
 
     # --- lifecycle ---------------------------------------------------------
 
@@ -213,6 +206,12 @@ class Driver:
         while True:
             await self._wait_for_work()
             self.now = monotonic_ms()
+
+            # One string comparison per pass, and it is what makes a
+            # reconnecting link safe: if the gateway handed us a different
+            # address, every socket's local endpoint has ceased to exist.
+            if self.link.config.address != self.config.local_ip:
+                self._rebind(self.link.config.address)
 
             for packet in self.link.take_inbound():
                 self.stack.handle_input(packet, self.now)
@@ -282,6 +281,26 @@ class Driver:
             stream.readable.set()
             stream.writable.set()
             stream.finished.set()
+
+    def _rebind(self, address: str) -> None:
+        """Adopt a new tunnel address, abandoning everything bound to the old.
+
+        There is no way to carry connections across this. Their four-tuples
+        name an address the gateway has taken back, so every segment we sent
+        would be discarded and every reply misrouted. Failing them with a
+        message that says exactly this is the only honest option -- and far
+        better than sockets that quietly stop working.
+        """
+        previous = self.config.local_ip
+        log.warning("tunnel address changed: %s -> %s; resetting the stack", previous, address)
+        self.address_changes += 1
+
+        self._fail_all(
+            f"the gateway reassigned our address ({previous} -> {address}); "
+            f"connections opened under the old one cannot continue"
+        )
+        self.config = replace(self.config, local_ip=address)
+        self.stack = PyStack(self.config)
 
     def _fail_all(self, reason: str) -> None:
         for sid in list(self._streams):

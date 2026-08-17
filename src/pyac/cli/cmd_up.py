@@ -12,6 +12,7 @@ import argparse
 import asyncio
 import contextlib
 import getpass
+import logging
 import os
 import struct
 import sys
@@ -23,12 +24,15 @@ from pyac.auth.client import authenticate, build_ssl_context, logout
 from pyac.cli.cmd_probe import parse_gateway
 from pyac.config import Credentials, GatewayConfig
 from pyac.cstp.config import TunnelConfig
+from pyac.cstp.link import ReconnectingLink
 from pyac.cstp.session import CstpSession
 from pyac.errors import ProtocolParseError, PyacError
 from pyac.net.icmp import build_echo_request, parse_icmp
 from pyac.net.ipv4 import PROTO_ICMP, PROTO_TCP, PROTO_UDP, build_ipv4, parse_ipv4
 from pyac.runtime.driver import Driver
 from pyac.socks import Socks5Server
+
+log = logging.getLogger("pyac.cli")
 
 _PROTOCOLS = {1: "icmp", 6: "tcp", 17: "udp", 47: "gre", 50: "esp"}
 _ICMP_TYPES = {0: "echo-reply", 3: "unreachable", 8: "echo-request", 11: "ttl-exceeded"}
@@ -94,6 +98,23 @@ def register(
         choices=("auto", "all"),
         default="auto",
         help="auto refuses addresses outside the advertised split routes; all tries anyway",
+    )
+    parser.add_argument(
+        "--keepalive",
+        metavar="HOST",
+        help="send an ICMP echo to HOST periodically, so the gateway's idle "
+        "timeout never fires (DPD and keepalive frames may not reset it)",
+    )
+    parser.add_argument(
+        "--keepalive-interval",
+        type=float,
+        default=300.0,
+        help="seconds between idle keepalives (default 300)",
+    )
+    parser.add_argument(
+        "--no-reconnect",
+        action="store_true",
+        help="exit when the tunnel ends instead of rebuilding it",
     )
     parser.add_argument(
         "--no-client-dpd",
@@ -197,50 +218,71 @@ async def _run(args: argparse.Namespace, gateway: GatewayConfig, credentials: Cr
         print(f"\n{success.banner}\n")
 
     pcap = PcapWriter(args.pcap) if args.pcap else None
-    session = CstpSession(
-        host=gateway.host,
-        port=gateway.port,
-        session_token=success.session_token,
-        ssl_context=build_ssl_context(gateway),
-        user_agent=gateway.user_agent,
-        mtu=args.mtu or 1406,
-        pcap=pcap,
-        client_dpd=not args.no_client_dpd,
-        coalesce=args.coalesce,
-    )
+
+    async def open_session() -> CstpSession:
+        """Build a fresh tunnel on the same ``webvpn`` cookie.
+
+        No re-authentication: the cookie stays valid across a reconnect, which
+        is what makes this transparent to the gateway. If it ever stops being
+        valid the CONNECT fails loudly -- a background task must never prompt
+        for a password.
+        """
+        session = CstpSession(
+            host=gateway.host,
+            port=gateway.port,
+            session_token=success.session_token,
+            ssl_context=build_ssl_context(gateway),
+            user_agent=gateway.user_agent,
+            mtu=args.mtu or 1406,
+            pcap=pcap,
+            client_dpd=not args.no_client_dpd,
+            coalesce=args.coalesce,
+        )
+        await session.connect()
+        return session
+
+    link = ReconnectingLink(open_session, reconnect=not args.no_reconnect)
 
     try:
-        config = await session.connect()
+        config = await link.start()
         print_tunnel(config)
         if pcap is not None:
             print(f"\nwriting {args.pcap}")
+        if config.rekey_time and not args.no_reconnect:
+            print(f"\nrekey    rebuilding the tunnel every {config.rekey_time}s")
         print("\ntunnel is up; press Ctrl-C to disconnect")
 
         if args.ping:
             pinger = asyncio.create_task(
-                _ping_loop(session, args.ping, args.ping_interval), name="pyac-ping"
+                _ping_loop(link, args.ping, args.ping_interval), name="pyac-ping"
             )
         else:
             pinger = None
 
         if args.socks:
-            await _serve_socks(session, args)
+            await _serve_socks(link, args)
         elif args.dump_only or args.ping:
-            await _dump(session, verbose=args.verbose > 0)
+            await _dump(link, verbose=args.verbose > 0)
         else:
             print("(nothing to do: pass --socks to serve a proxy, or --dump-only)")
-            await session.closed.wait()
+            await link.closed.wait()
 
         if pinger is not None:
             pinger.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await pinger
 
-        if session.close_reason:
-            print(f"\ntunnel closed: {session.close_reason}")
-        print(session.stats())
+        if link.close_reason:
+            print(f"\ntunnel closed: {link.close_reason}")
+        if link.reconnects:
+            print(
+                f"reconnects {link.reconnects}"
+                + (f" ({link.address_changes} with a new address)" if link.address_changes else "")
+            )
+        with contextlib.suppress(PyacError):
+            print(link.session.stats())
     finally:
-        await session.aclose()
+        await link.aclose()
         if pcap is not None:
             pcap.close()
         await logout(gateway, success.session_token)
@@ -265,12 +307,12 @@ def parse_socks_auth(spec: str | None) -> tuple[str | None, str | None]:
     return username, password
 
 
-async def _serve_socks(session: CstpSession, args: argparse.Namespace) -> None:
-    """Run the proxy until the tunnel closes or Ctrl-C arrives."""
+async def _serve_socks(link: ReconnectingLink, args: argparse.Namespace) -> None:
+    """Run the proxy until the tunnel closes for good, or Ctrl-C arrives."""
     host, port = parse_listen(args.socks)
     username, password = parse_socks_auth(args.socks_auth)
 
-    driver = Driver(session)
+    driver = Driver(link)
     driver.start()
     proxy = Socks5Server(
         driver,
@@ -291,19 +333,59 @@ async def _serve_socks(session: CstpSession, args: argparse.Namespace) -> None:
         print(f"\ncurl --socks5 {proxy.address} http://<ip-inside-the-vpn>/")
         print("\npress Ctrl-C to disconnect")
 
-        while not session.closed.is_set():
+        keeper = None
+        if args.keepalive:
+            keeper = asyncio.create_task(
+                _keepalive_loop(driver, args.keepalive, args.keepalive_interval),
+                name="pyac-keepalive",
+            )
+
+        while not link.closed.is_set():
             # Short waits: an idle proactor loop on Windows will not notice
             # Ctrl-C until something wakes it.
             with contextlib.suppress(TimeoutError):
-                await asyncio.wait_for(session.closed.wait(), timeout=0.5)
+                await asyncio.wait_for(link.closed.wait(), timeout=0.5)
+
+        if keeper is not None:
+            keeper.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await keeper
 
         print(f"\nsocks: {proxy.connections} connections, {proxy.rejected} rejected")
+        if driver.address_changes:
+            print(
+                f"       {driver.address_changes} address change(s); connections open "
+                f"at the time were reset"
+            )
     finally:
         await proxy.aclose()
         await driver.aclose()
 
 
-async def _ping_loop(session: CstpSession, target: str, interval: float) -> None:
+async def _keepalive_loop(driver: Driver, target: str, interval: float) -> None:
+    """Push real traffic through the tunnel so the idle timer keeps resetting.
+
+    DPD and keepalive *frames* do not always count: on several gateways only
+    payload resets ``X-CSTP-Idle-Timeout``. One echo request every few minutes
+    is the cheapest thing that unambiguously does.
+    """
+    sequence = 0
+    while True:
+        await asyncio.sleep(interval)
+        sequence += 1
+        # Quiet by design: this runs for hours and its whole job is to be
+        # unremarkable. A lost reply is not news either -- the point is the
+        # bytes we sent, not the ones that came back.
+        rtt = await driver.ping(target, sequence, timeout=5.0)
+        log.debug(
+            "keepalive %d to %s: %s",
+            sequence,
+            target,
+            f"{rtt:.0f} ms" if rtt else "no reply",
+        )
+
+
+async def _ping_loop(link: ReconnectingLink, target: str, interval: float) -> None:
     """Send ICMP echo requests through the tunnel.
 
     This is real data on the wire, which distinguishes a gateway that drops
@@ -316,13 +398,13 @@ async def _ping_loop(session: CstpSession, target: str, interval: float) -> None
     while True:
         sequence += 1
         packet = build_ipv4(
-            source=session.config.address,
+            source=link.config.address,
             destination=target,
             protocol=PROTO_ICMP,
             payload=build_echo_request(ident, sequence, b"pyac" * 4),
             identification=sequence,
         )
-        session.send(packet)
+        link.send(packet)
         print(f"  -> icmp echo request to {target} seq={sequence}")
         await asyncio.sleep(interval)
 
@@ -330,18 +412,18 @@ async def _ping_loop(session: CstpSession, target: str, interval: float) -> None
 HEARTBEAT_SECONDS = 30.0
 
 
-async def _dump(session: CstpSession, *, verbose: bool) -> None:
+async def _dump(link: ReconnectingLink, *, verbose: bool) -> None:
     """Report inbound packets until the tunnel closes or Ctrl-C arrives."""
     total = 0
     next_heartbeat = time.monotonic() + HEARTBEAT_SECONDS
 
-    while not session.closed.is_set():
+    while not link.closed.is_set():
         # Short waits rather than one long one: on Windows an idle event loop
         # will not notice Ctrl-C until it wakes up.
         with contextlib.suppress(TimeoutError):
-            await asyncio.wait_for(session.wake.wait(), timeout=0.5)
+            await asyncio.wait_for(link.wake.wait(), timeout=0.5)
 
-        for packet in session.take_inbound():
+        for packet in link.take_inbound():
             total += 1
             if verbose or total <= 20:
                 print(f"  <- {summarize_ipv4(packet)}")
@@ -352,6 +434,7 @@ async def _dump(session: CstpSession, *, verbose: bool) -> None:
         # the frame counters show that keepalives and DPD are still flowing.
         if time.monotonic() >= next_heartbeat:
             next_heartbeat = time.monotonic() + HEARTBEAT_SECONDS
+            session = link.session
             elapsed = time.monotonic() - session.started_at
             sent = sum(session.frames_out.values())
             received = sum(session.frames_in.values())
@@ -359,4 +442,4 @@ async def _dump(session: CstpSession, *, verbose: bool) -> None:
                 f"  [{elapsed:5.0f}s] {total} data packets, {received} frames in, {sent} frames out"
             )
 
-    print(f"\n{total} packets received, {session.dropped_inbound} dropped")
+    print(f"\n{total} packets received, {link.session.dropped_inbound} dropped")
