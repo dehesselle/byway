@@ -11,8 +11,9 @@ hands us raw IP packets, and an in-process TCP/IP stack turns them back into str
 Access is through a local SOCKS5 proxy — so `ssh` and `curl` work unchanged — and an
 in-process async API.
 
-> **Status: working, not yet 1.0.** Authentication, the tunnel, the TCP stack, SOCKS5,
-> `nc` and `get` all work against a real gateway. The API surface may still move.
+> **Status: 1.0.** Authentication, the tunnel, the TCP stack, SOCKS5, the CLI and the
+> in-process API all work against a real gateway, and the TCP implementation is checked
+> against a real Linux kernel under packet loss.
 
 ## Why you might want this
 
@@ -40,6 +41,31 @@ $ pyac get http://10.221.188.20/v1/things
 Credentials never go in `argv`: use `PYAC_PASSWORD`, `--password-stdin`, or the interactive
 prompt. Certificate pinning is `--pin sha256:<hex>`, compatible with openconnect's
 `--servercert`, and is the right answer for an internal CA — not `--no-verify`.
+
+## In your own program
+
+```python
+import pyac
+
+async with pyac.connect("vpn.corp.example", user, password) as vpn:
+    # A genuine (StreamReader, StreamWriter): asyncssh, asyncpg and anything
+    # written against asyncio.open_connection work unchanged.
+    reader, writer = await vpn.open_connection("10.221.188.32", 22)
+
+    async with vpn.httpx_client() as http:
+        response = await http.get("http://10.221.188.20/v1/things")
+
+    await vpn.serve_socks5(port=1080)  # also expose it to other processes
+```
+
+Leaving the block closes the tunnel *and* posts the logout. That second part is not
+housekeeping: gateways enforce concurrent-session limits, and leaked sessions eventually lock
+you out of your own VPN with nothing to point at.
+
+Flow control composes with the stdlib for free. `StreamReader`'s high-water mark calls
+`pause_reading()`, which stops us draining the stack, which shrinks the advertised window,
+which stops the far end sending — backpressure reaches the peer without a queue anywhere in
+between.
 
 ## Limits worth knowing before you start
 
@@ -76,22 +102,22 @@ Measured, not estimated. Single connection, receive direction.
 | Same stack at 150 ms RTT, 1 MiB buffer | 3.8 MB/s |
 | A real ASA at 31 ms, 1.3 GB, SHA-256 verified | 1.1 MB/s |
 
-That last figure is **not** a limit of this code. At 31 ms even the old 256 KiB buffer allowed
-8.5 MB/s, the client CPU was idle throughout, and a second transfer took bandwidth from the
-first rather than adding to it — a shared ceiling, which is what a per-user bandwidth policy
-on the gateway looks like. 10 Mbit/s of policy comes to about 1.15 MB/s of goodput once
-tunnel and TLS overhead are removed. If your own gateway is not policed, expect the
-buffer-and-latency arithmetic above to govern instead.
+**Latency, not Python, is what you will hit first.** The two 150 ms rows are the same code on
+the same machine: one connection cannot exceed `buffer ÷ RTT` whatever the code does. The
+default buffer is therefore 1 MiB, and `--buffer KIB` raises it. Bigger is not automatically
+better — past about 1 MiB the sender's bursts start overrunning queues below us and the
+returns go negative.
 
-Those last two are the same code on the same machine. **On any distant gateway the limit is
-the window, not Python:** one connection cannot exceed `buffer ÷ RTT` whatever the code does,
-and at 150 ms a 256 KiB buffer caps you near 1.7 MB/s. The default is therefore 1 MiB, and
-`--buffer KIB` raises it further.
+**The real-gateway row is a limit of that gateway, not of this code.** At 31 ms even a
+256 KiB buffer allowed 8.5 MB/s, the client CPU was idle throughout, and a second transfer
+took bandwidth from the first rather than adding to it — a shared ceiling, which is what a
+per-user bandwidth policy looks like from inside. 10 Mbit/s of policy works out to roughly
+1.15 MB/s of goodput once tunnel and TLS overhead come off. Measure your own before assuming
+either explanation applies.
 
-Bigger is not automatically better — past about 1 MiB the sender's bursts start overrunning
-queues below us, and the returns go negative. If you want more than this can give, the
-`NetworkBackend` protocol exists so a native stack could be dropped in; but on a
-high-latency link that would change nothing, because the limit is not the CPU.
+If you need more than this can give, the `NetworkBackend` protocol exists so a native stack
+could be dropped in — but on a high-latency or policed link that would change nothing,
+because the limit is not the CPU.
 
 ## How it is tested
 
