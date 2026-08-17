@@ -24,6 +24,7 @@ segments to send and events to report.
 
 from __future__ import annotations
 
+from bisect import insort
 from dataclasses import dataclass, field
 from enum import Enum, auto
 
@@ -94,10 +95,18 @@ class TcbConfig:
     initial_cwnd_segments: int = 10  # IW10, RFC 6928
     window_scaling: bool = True
 
-    # A bound on how much reordering we will absorb before falling back to the
-    # peer's retransmission. Unbounded would let a peer pin memory by sending
-    # a gap and then a great many segments behind it.
-    max_ooo_segments: int = 64
+    # Memory is already bounded in *bytes*: _trim clips every segment to the
+    # window we advertised, and recv_window subtracts what is held out of
+    # order. This cap exists only so that a peer sending one byte per segment
+    # cannot make the list itself the cost.
+    #
+    # It must stay comfortably above rx_buffer/mss. At 64 it bound first, and
+    # the effect was not a saving but a stall: a 256 KiB window holds ~180
+    # full segments, so after a single loss we discarded ~190 KB that had
+    # arrived intact and made the peer send it again -- repeatedly, since the
+    # next window did the same. Found by the L3 conformance suite under 2%
+    # loss, where a 2 MiB transfer went from 15 s to over 120 s.
+    max_ooo_segments: int = 1024
 
 
 def initial_window_scale(buffer_size: int) -> int:
@@ -202,6 +211,12 @@ class Tcb:
     _ooo: list[tuple[int, bytes]] = field(default_factory=list)
     """Segments received ahead of ``rcv_nxt``, sorted by distance from it."""
     _ooo_bytes: int = 0
+    ooo_dropped: int = 0
+    """In-window segments refused because the reassembly queue was full.
+
+    Should stay zero. Anything else means we discarded data that arrived
+    intact and asked the peer to send it again.
+    """
     _peer_fin_seq: int | None = None
     _segments_since_ack: int = 0
     _write_blocked: bool = False
@@ -285,12 +300,20 @@ class Tcb:
     def recv_window(self) -> int:
         """Advertised window: whatever is still free in the receive buffer.
 
-        Computed at ACK time from the *unread* backlog -- plus anything held
-        out of order, which is equally unavailable -- which is what makes flow
-        control real. Draining into an unbounded queue elsewhere would keep
-        this permanently wide open.
+        Computed at ACK time from the *unread* backlog, which is what makes
+        flow control real. Draining into an unbounded queue elsewhere would
+        keep this permanently wide open.
+
+        Out-of-order bytes are deliberately *not* subtracted. They already sit
+        inside ``[rcv_nxt, rcv_nxt + window)``, so charging for them again
+        halves the window the moment a hole opens -- exactly when it needs to
+        stay open, since the peer can only keep sending, and only continued
+        sending produces the duplicate ACKs that trigger fast retransmit. The
+        memory bound still holds: the peer may have at most ``window`` bytes in
+        that range, so ``len(recv_buffer) + _ooo_bytes`` cannot exceed
+        ``rx_buffer`` even if every one of them arrives out of order.
         """
-        return max(0, self.config.rx_buffer - len(self.recv_buffer) - self._ooo_bytes)
+        return max(0, self.config.rx_buffer - len(self.recv_buffer))
 
     @property
     def advertised_window(self) -> int:
@@ -334,6 +357,19 @@ class Tcb:
 
         if self.state is State.SYN_SENT:
             self._on_syn_sent(segment, now)
+            return
+
+        if segment.has(Flag.SYN):
+            # RFC 5961 4.2: a SYN in a synchronized state gets a challenge ACK
+            # -- <SEQ=SND.NXT><ACK=RCV.NXT><CTL=ACK> -- and no further
+            # processing. Written as an attack mitigation, but the case that
+            # matters here is ordinary loss: if our handshake ACK is dropped,
+            # the peer keeps retransmitting its SYN-ACK, and this reply is the
+            # only thing that completes the connection. Without it the peer
+            # backs off and gives up while we sit in ESTABLISHED believing all
+            # is well. Not rate limited: the response is one segment per SYN,
+            # so there is nothing to amplify.
+            self._emit(Flag.ACK, now)
             return
 
         # Anything arriving now must acknowledge data we actually sent.
@@ -580,6 +616,17 @@ class Tcb:
         self.rcv_nxt = seq_add(self.rcv_nxt, len(payload))
         self.pending_events.append(("readable", None))
 
+    def _has_room_for(self, extra: int) -> bool:
+        """Whether ``extra`` more bytes fit inside the buffer we advertised.
+
+        The memory bound, stated directly rather than inferred from sequence
+        space. Non-overlapping segments can never reach it -- the window
+        already limits those -- but a peer may send *overlapping* ones, whose
+        bytes add up faster than the range they cover, and no amount of
+        sequence arithmetic notices. Every path that grows the queue asks here.
+        """
+        return len(self.recv_buffer) + self._ooo_bytes + extra <= self.config.rx_buffer
+
     def _hold(self, seq: int, payload: bytes) -> None:
         """Queue a segment that arrived ahead of the gap."""
         for index, (held_seq, held) in enumerate(self._ooo):
@@ -589,15 +636,30 @@ class Tcb:
                 return  # already have it
             # A longer resend of the same segment replaces the shorter copy,
             # rather than being appended and double-counted against the window.
-            self._ooo_bytes += len(payload) - len(held)
+            # Still charged for: repeatedly upgrading short segments to long
+            # ones is otherwise a way to grow the queue without ever appending.
+            growth = len(payload) - len(held)
+            if not self._has_room_for(growth):
+                self.ooo_dropped += 1
+                return
+            self._ooo_bytes += growth
             self._ooo[index] = (seq, payload)
+            return
+        if not self._has_room_for(len(payload)):
+            self.ooo_dropped += 1
             return
         if len(self._ooo) >= self.config.max_ooo_segments:
             # Past the bound we fall back to the peer's retransmission, which
-            # costs an RTO but cannot be made to pin memory.
+            # costs an RTO. Counted, because reaching it at all means the cap
+            # is binding before the byte bound does -- which is a stall, and
+            # was one. See TcbConfig.max_ooo_segments.
+            self.ooo_dropped += 1
             return
-        self._ooo.append((seq, payload))
-        self._ooo.sort(key=lambda item: seq_diff(item[0], self.rcv_nxt))
+        # Insert in place rather than re-sorting: the queue now holds a whole
+        # window, and a sort per arriving segment would be the next thing to go
+        # wrong. Every entry is ahead of rcv_nxt and the key shifts by the same
+        # amount as it advances, so the ordering stays valid.
+        insort(self._ooo, (seq, payload), key=lambda item: seq_diff(item[0], self.rcv_nxt))
         self._ooo_bytes += len(payload)
 
     def _drain_ooo(self) -> None:

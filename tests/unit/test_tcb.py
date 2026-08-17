@@ -552,6 +552,51 @@ def test_out_of_window_reset_is_ignored(h: Harness) -> None:
     assert h.tcb.error is None
 
 
+def test_a_retransmitted_syn_ack_is_answered_with_a_challenge_ack(h: Harness) -> None:
+    """Found by the L3 suite under 2% loss, and invisible to every self-test.
+
+    If our handshake ACK is dropped the peer keeps retransmitting its SYN-ACK.
+    Nothing else in the state machine reacts to it -- a bare SYN carries no
+    payload, so the delayed-ACK policy sees neither new data nor a duplicate --
+    and the connection is established for us and not for the peer, until the
+    peer gives up. RFC 5961 4.2 requires the reply that fixes it.
+    """
+    h.establish()
+    h.peer(seq=PEER_ISN, ack=seq_add(ISN, 1), flags=Flag.SYN | Flag.ACK)
+
+    reply = h.one()
+    assert reply.flags & Flag.ACK
+    assert not reply.flags & Flag.SYN
+    assert reply.seq == seq_add(ISN, 1), "SEQ=SND.NXT, so the peer can validate it"
+    assert reply.ack == seq_add(PEER_ISN, 1), "ACK=RCV.NXT, completing the handshake"
+    assert h.tcb.state is State.ESTABLISHED
+
+
+def test_a_challenge_ack_does_not_disturb_the_sequence_space(h: Harness) -> None:
+    """It is a reply, not new data: consuming sequence space here would make
+    every subsequent ACK look wrong to the peer."""
+    h.establish()
+    h.tcb.send(b"payload", h.now)
+    h.sent()
+    before = (h.tcb.snd_nxt, h.tcb.snd_una, h.tcb.snd_max, h.tcb.rcv_nxt)
+
+    h.peer(seq=PEER_ISN, ack=seq_add(ISN, 1), flags=Flag.SYN | Flag.ACK)
+    h.one()
+
+    assert (h.tcb.snd_nxt, h.tcb.snd_una, h.tcb.snd_max, h.tcb.rcv_nxt) == before
+
+
+def test_a_bare_syn_in_established_does_not_reset_us(h: Harness) -> None:
+    """The other half of RFC 5961 4.2, and the reason it exists: a blind
+    off-path SYN must cost the connection nothing."""
+    h.establish()
+    h.peer(seq=seq_add(PEER_ISN, 500_000), ack=0, flags=Flag.SYN)
+
+    assert h.tcb.state is State.ESTABLISHED
+    assert h.tcb.error is None
+    assert h.one().flags & Flag.ACK
+
+
 def test_abort_sends_a_reset(h: Harness) -> None:
     h.establish()
     h.tcb.abort(h.now, "user abort")
@@ -771,16 +816,89 @@ def test_a_wholly_duplicate_segment_is_acked_but_not_delivered(h: Harness) -> No
     assert h.one().ack == seq_add(base, 4)
 
 
-def test_held_bytes_count_against_the_advertised_window() -> None:
-    """Otherwise a peer could park unlimited memory behind a single gap."""
+def test_a_gap_does_not_shrink_the_advertised_window() -> None:
+    """Held bytes sit inside ``[rcv_nxt, rcv_nxt + window)`` already, so
+    charging for them again halves the window exactly when a hole opens --
+    which is when it must stay open, because only continued sending produces
+    the duplicate ACKs that trigger fast retransmit. Subtracting them cost a
+    2 MiB transfer over 120 s under 2% loss, against 15 s without.
+    """
     h = Harness(rx_buffer=1000)
     h.establish()
     h.peer(seq=seq_add(PEER_ISN, 501), ack=seq_add(ISN, 1), flags=Flag.ACK, payload=b"h" * 400)
 
-    assert h.one().window == 600
+    assert h.one().window == 1000
 
 
-def test_the_reassembly_queue_is_bounded() -> None:
+def test_a_whole_window_of_out_of_order_segments_is_held() -> None:
+    """The regression that mattered: at 64 segments the cap bound long before
+    the byte bound, so after one loss we discarded ~190 KB that had arrived
+    intact and demanded it again -- every window, indefinitely."""
+    h = Harness()
+    h.establish(peer_mss=1460)
+    base = seq_add(PEER_ISN, 1)
+    for index in range(1, 200):  # segment 0 is the hole
+        h.peer(
+            seq=seq_add(base, index * 1460),
+            ack=seq_add(ISN, 1),
+            flags=Flag.ACK,
+            payload=b"y" * 1460,
+        )
+    h.sent()
+
+    assert h.tcb.ooo_dropped == 0, "in-window data that arrived intact was discarded"
+    assert h.tcb._ooo_bytes > h.tcb.config.rx_buffer - 2 * 1460, "the window was not filled"
+
+
+def test_the_segment_cap_stays_clear_of_the_byte_bound() -> None:
+    """The cap is protection against a peer sending one byte at a time, not the
+    memory bound. If it can bind first for legitimate traffic it is a stall."""
+    config = TcbConfig()
+    assert config.max_ooo_segments > config.rx_buffer // DEFAULT_MSS
+
+
+def test_overlapping_segments_cannot_exceed_the_receive_buffer() -> None:
+    """Sequence space does not bound memory on its own: overlapping segments
+    add up faster than the range they cover, and the window arithmetic cannot
+    see it. Hence an explicit byte bound in _hold."""
+    h = Harness(rx_buffer=4000)
+    h.establish()
+    base = seq_add(PEER_ISN, 1)
+    for index in range(1, 400):
+        # Every segment overlaps its neighbours, so the bytes far exceed the
+        # 4000-byte span they occupy.
+        h.peer(
+            seq=seq_add(base, index * 10),
+            ack=seq_add(ISN, 1),
+            flags=Flag.ACK,
+            payload=b"z" * 500,
+        )
+    h.sent()
+
+    assert len(h.tcb.recv_buffer) + h.tcb._ooo_bytes <= h.tcb.config.rx_buffer
+    assert h.tcb.ooo_dropped > 0, "the bound never engaged, so nothing was proven"
+
+
+def test_upgrading_held_segments_cannot_exceed_the_receive_buffer() -> None:
+    """A longer resend replaces a shorter copy in place, which grows the queue
+    without appending to it -- so it has to be charged for like any other
+    growth, or it is a way around the bound rather than an exception to it."""
+    h = Harness(rx_buffer=2000)
+    h.establish()
+    base = seq_add(PEER_ISN, 1)
+    # Stake out many small held segments, then resend each one much longer.
+    for index in range(1, 40):
+        h.peer(seq=seq_add(base, index * 50), ack=seq_add(ISN, 1), flags=Flag.ACK, payload=b"s")
+    for index in range(1, 40):
+        h.peer(
+            seq=seq_add(base, index * 50), ack=seq_add(ISN, 1), flags=Flag.ACK, payload=b"L" * 50
+        )
+    h.sent()
+
+    assert len(h.tcb.recv_buffer) + h.tcb._ooo_bytes <= h.tcb.config.rx_buffer
+
+
+def test_the_reassembly_queue_is_bounded_by_segment_count_too() -> None:
     """Past the bound we fall back to retransmission rather than pin memory."""
     h = Harness(max_ooo_segments=4)
     h.establish()
@@ -791,6 +909,7 @@ def test_the_reassembly_queue_is_bounded() -> None:
     h.sent()
 
     assert h.tcb._ooo_bytes == 40
+    assert h.tcb.ooo_dropped == 7
 
     # The gap still fills, and only the segments we kept are delivered.
     h.peer(seq=base, ack=seq_add(ISN, 1), flags=Flag.ACK, payload=b"x" * 10)
