@@ -138,6 +138,45 @@ async def test_no_rekey_when_the_gateway_asks_for_none(certs: Path) -> None:
             await link.aclose()
 
 
+async def test_the_effective_rekey_interval_is_reported(certs: Path) -> None:
+    """``pyac up`` prints this, so it has to be the interval in force rather
+    than the advertised one -- otherwise the output describes something the
+    link does not do."""
+    async with FakeGateway(
+        [], certs_dir=certs, tunnel_headers=headers_with(rekey_time="3600")
+    ) as gateway:
+        link = linking(gateway, rekey_fraction=0.9)
+        await link.start()
+        try:
+            assert link.rekey_seconds == pytest.approx(3240)
+        finally:
+            await link.aclose()
+
+
+async def test_no_rekey_interval_is_reported_when_none_is_scheduled(certs: Path) -> None:
+    """Two ways to get here, and both must be distinguishable from a number:
+    a gateway that asks for no rekey, and reconnection switched off."""
+    async with FakeGateway(
+        [], certs_dir=certs, tunnel_headers=headers_with(rekey_time="0")
+    ) as gateway:
+        link = linking(gateway)
+        await link.start()
+        try:
+            assert link.rekey_seconds is None
+        finally:
+            await link.aclose()
+
+    async with FakeGateway(
+        [], certs_dir=certs, tunnel_headers=headers_with(rekey_time="3600")
+    ) as gateway:
+        link = linking(gateway, reconnect=False)
+        await link.start()
+        try:
+            assert link.rekey_seconds is None
+        finally:
+            await link.aclose()
+
+
 async def test_packets_sent_during_the_gap_are_delivered(certs: Path) -> None:
     """TCP would retransmit them anyway, but an immediate flush saves an RTO."""
     async with FakeGateway([], certs_dir=certs, tunnel_headers=BASE_HEADERS) as gateway:

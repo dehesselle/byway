@@ -194,6 +194,19 @@ class ReconnectingLink:
         return self._config
 
     @property
+    def rekey_seconds(self) -> float | None:
+        """How long a session is allowed to live before being rebuilt, or None
+        if the gateway schedules no rekey at all.
+
+        The interval actually in force, fraction included, so a caller can
+        report what will happen rather than re-deriving it and drifting.
+        """
+        config = self._config
+        if config is None or not config.rekey_time or not self._reconnect:
+            return None
+        return config.rekey_time * self._rekey_fraction
+
+    @property
     def wake(self) -> asyncio.Event:
         # The current session's, re-read by the driver on every pass. During a
         # reconnect there is no session to wait on, so hand back an event that

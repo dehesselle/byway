@@ -185,12 +185,46 @@ def print_tunnel(config: TunnelConfig) -> None:
     print()
     if config.rekey_time:
         print(f"rekey     {config.rekey_time}s (method {config.rekey_method})")
+    else:
+        # Said out loud, because silence here reads as "pyac forgot to print
+        # it" rather than "the gateway asked for no rekey", and the two have
+        # very different consequences for a long-running session.
+        print("rekey     none advertised")
     if config.banner:
         print(f"\nbanner    {config.banner}")
     if config.unknown_headers:
         print("\nunrecognised headers (please report these):")
         for name, value in config.unknown_headers:
             print(f"  {name}: {value}")
+
+
+def print_liveness(
+    config: TunnelConfig, args: argparse.Namespace, rekey_seconds: float | None
+) -> None:
+    """What is keeping this tunnel alive, and what will end it.
+
+    Printed unconditionally. The two facts that decide whether a long session
+    survives -- whether a rekey is scheduled, and whether anything is resetting
+    the idle timer -- are exactly the ones a user cannot infer from an absent
+    line, so every branch says something.
+    """
+    print()
+    if args.no_reconnect:
+        print("reconnect disabled; the tunnel ends when the connection does")
+    elif rekey_seconds is not None:
+        print(f"reconnect rebuilding the tunnel every {rekey_seconds:.0f}s, and on any drop")
+    else:
+        print("reconnect on drop only (this gateway schedules no rekey)")
+
+    if args.keepalive:
+        print(f"keepalive icmp echo to {args.keepalive} every {args.keepalive_interval:.0f}s")
+    elif config.idle_timeout:
+        # The failure this averts is silent and slow: the tunnel simply stops
+        # half an hour after the last request, with nothing to explain it.
+        print(
+            f"keepalive none -- the gateway drops an idle tunnel after "
+            f"{config.idle_timeout}s; pass --keepalive <ip-inside-the-vpn> to hold it open"
+        )
 
 
 def run(args: argparse.Namespace) -> int:
@@ -248,8 +282,7 @@ async def _run(args: argparse.Namespace, gateway: GatewayConfig, credentials: Cr
         print_tunnel(config)
         if pcap is not None:
             print(f"\nwriting {args.pcap}")
-        if config.rekey_time and not args.no_reconnect:
-            print(f"\nrekey    rebuilding the tunnel every {config.rekey_time}s")
+        print_liveness(config, args, link.rekey_seconds)
         print("\ntunnel is up; press Ctrl-C to disconnect")
 
         if args.ping:
