@@ -31,7 +31,7 @@ import httpx
 from pyac._logging import configure as configure_logging
 from pyac._pcap import PcapWriter
 from pyac.auth.client import authenticate, build_ssl_context, logout
-from pyac.cli import buffer_bytes
+from pyac.cli import apply_profile, buffer_bytes, finalize_route_policy
 from pyac.cli.cmd_probe import parse_gateway
 from pyac.cli.cmd_up import read_password
 from pyac.config import Credentials, GatewayConfig
@@ -57,10 +57,21 @@ def register(
             "the userspace TCP stack. Plain HTTP to an IP address only, for now."
         ),
     )
-    parser.add_argument("gateway", help="gateway hostname, optionally host:port")
+    parser.add_argument(
+        "gateway",
+        nargs="?",
+        default=None,
+        help="gateway hostname, optionally host:port (or from --profile)",
+    )
     parser.add_argument("url", help="http://<ip>[:port][/path] inside the VPN")
-    parser.add_argument("-u", "--user", required=True, help="username")
+    parser.add_argument("-u", "--user", help="username (or from --profile)")
     parser.add_argument("-g", "--group", help="tunnel group (see `pyac probe`)")
+    parser.add_argument(
+        "--profile",
+        metavar="NAME",
+        help="fill in unset connect flags from [profiles.NAME] in the config file "
+        "(see --config); explicit flags always win",
+    )
     parser.add_argument(
         "--password-stdin",
         action="store_true",
@@ -116,8 +127,9 @@ def register(
     parser.add_argument(
         "--route-policy",
         choices=("auto", "all"),
-        default="auto",
-        help="auto refuses addresses outside the advertised split routes; all tries anyway",
+        default=None,
+        help="auto refuses addresses outside the advertised split routes; all tries "
+        "anyway (default auto)",
     )
     parser.set_defaults(handler=run)
 
@@ -219,10 +231,23 @@ def run(args: argparse.Namespace) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 
+    try:
+        apply_profile(args)
+    except PyacError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    finalize_route_policy(args)
+    if not args.gateway:
+        print("error: gateway is required (pass it directly, or via --profile)", file=sys.stderr)
+        return 2
+    if not args.user:
+        print("error: -u/--user is required (pass it directly, or via --profile)", file=sys.stderr)
+        return 2
+
     gateway = parse_gateway(args.gateway, pin=args.pin, no_verify=args.no_verify)
     credentials = Credentials(
         username=args.user,
-        password=read_password(args.password_stdin),
+        password=read_password(args.password_stdin, profile=args.profile, username=args.user),
         group=args.group,
     )
     try:

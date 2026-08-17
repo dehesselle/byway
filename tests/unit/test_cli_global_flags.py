@@ -70,6 +70,10 @@ def test_probe_accepts_the_global_flags_too() -> None:
     assert (args.json, args.verbose) == (True, 1)
 
 
-def test_up_requires_a_user() -> None:
-    with pytest.raises(SystemExit):
-        parse("up", "gw")
+def test_up_does_not_require_a_user_at_parse_time() -> None:
+    """-u is optional in argparse now: a --profile can supply it instead.
+
+    cmd_up.run() enforces its presence at runtime; see
+    tests/unit/test_cli_profile_merge.py.
+    """
+    assert parse("up", "gw").user is None

@@ -79,6 +79,12 @@ def test_remote_binding_needs_its_own_flag() -> None:
     assert parse("up", "gw", "-u", "me", "--socks", "--socks-allow-remote").socks_allow_remote
 
 
-def test_the_route_policy_defaults_to_auto() -> None:
-    assert parse("up", "gw", "-u", "me").route_policy == "auto"
+def test_the_route_policy_is_unset_until_finalized() -> None:
+    """None at parse time now: --profile may still supply it.
+
+    finalize_route_policy() (see pyac.cli) is what actually applies the
+    "auto" default, after any --profile merge; see
+    tests/unit/test_cli_profile_merge.py.
+    """
+    assert parse("up", "gw", "-u", "me").route_policy is None
     assert parse("up", "gw", "-u", "me", "--route-policy", "all").route_policy == "all"

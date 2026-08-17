@@ -21,7 +21,7 @@ import time
 from pyac._logging import configure as configure_logging
 from pyac._pcap import PcapWriter
 from pyac.auth.client import authenticate, build_ssl_context, logout
-from pyac.cli import buffer_bytes
+from pyac.cli import apply_profile, buffer_bytes, finalize_route_policy
 from pyac.cli.cmd_probe import parse_gateway
 from pyac.config import Credentials, GatewayConfig
 from pyac.cstp.config import TunnelConfig
@@ -30,6 +30,7 @@ from pyac.cstp.session import CstpSession
 from pyac.errors import HandshakeRejected, ProtocolParseError, PyacError
 from pyac.net.icmp import build_echo_request, parse_icmp
 from pyac.net.ipv4 import PROTO_ICMP, PROTO_TCP, PROTO_UDP, build_ipv4, parse_ipv4
+from pyac.profile import password_from_keyring
 from pyac.runtime.driver import Driver
 from pyac.socks import Socks5Server
 
@@ -49,9 +50,20 @@ def register(
         help="authenticate and establish the tunnel",
         description="Authenticate against the gateway and hold the CSTP tunnel open.",
     )
-    parser.add_argument("gateway", help="gateway hostname, optionally host:port")
-    parser.add_argument("-u", "--user", required=True, help="username")
+    parser.add_argument(
+        "gateway",
+        nargs="?",
+        default=None,
+        help="gateway hostname, optionally host:port (or from --profile)",
+    )
+    parser.add_argument("-u", "--user", help="username (or from --profile)")
     parser.add_argument("-g", "--group", help="tunnel group (see `pyac probe`)")
+    parser.add_argument(
+        "--profile",
+        metavar="NAME",
+        help="fill in unset connect flags from [profiles.NAME] in the config file "
+        "(see --config); explicit flags always win",
+    )
     parser.add_argument(
         "--password-stdin",
         action="store_true",
@@ -104,8 +116,9 @@ def register(
     parser.add_argument(
         "--route-policy",
         choices=("auto", "all"),
-        default="auto",
-        help="auto refuses addresses outside the advertised split routes; all tries anyway",
+        default=None,
+        help="auto refuses addresses outside the advertised split routes; all tries "
+        "anyway (default auto)",
     )
     parser.add_argument(
         "--keepalive",
@@ -137,12 +150,24 @@ def register(
     parser.set_defaults(handler=run)
 
 
-def read_password(from_stdin: bool) -> str:
-    """Never from argv: that leaks into the process list and shell history."""
+def read_password(
+    from_stdin: bool, *, profile: str | None = None, username: str | None = None
+) -> str:
+    """Never from argv: that leaks into the process list and shell history.
+
+    Order: --password-stdin, then PYAC_PASSWORD, then (only when a profile
+    was used) a keyring lookup keyed on the profile name and username, then
+    an interactive prompt.
+    """
     if from_stdin:
         return sys.stdin.readline().rstrip("\r\n")
     if (from_env := os.environ.get("PYAC_PASSWORD")) is not None:
         return from_env
+    if profile is not None:
+        assert username is not None, "apply_profile guarantees a username by this point"
+        found = password_from_keyring(profile, username)
+        if found is not None:
+            return found
     return getpass.getpass("Password: ")
 
 
@@ -261,10 +286,23 @@ def print_close_advice(
 
 def run(args: argparse.Namespace) -> int:
     configure_logging(args.verbose)
+    try:
+        apply_profile(args)
+    except PyacError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    finalize_route_policy(args)
+    if not args.gateway:
+        print("error: gateway is required (pass it directly, or via --profile)", file=sys.stderr)
+        return 2
+    if not args.user:
+        print("error: -u/--user is required (pass it directly, or via --profile)", file=sys.stderr)
+        return 2
+
     gateway = parse_gateway(args.gateway, pin=args.pin, no_verify=args.no_verify)
     credentials = Credentials(
         username=args.user,
-        password=read_password(args.password_stdin),
+        password=read_password(args.password_stdin, profile=args.profile, username=args.user),
         group=args.group,
     )
     try:

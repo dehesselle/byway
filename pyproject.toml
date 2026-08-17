@@ -5,7 +5,7 @@ description = "Userspace Cisco AnyConnect (CSTP) client with an in-process TCP/I
 readme = "README.md"
 authors = [{ name = "René de Hesselle", email = "dehesselle@web.de" }]
 requires-python = ">=3.12"
-dependencies = ["httpx>=0.27,<0.29", "defusedxml>=0.7.1"]
+dependencies = ["httpx>=0.27,<0.29", "defusedxml>=0.7.1", "platformdirs>=4"]
 
 [project.optional-dependencies]
 keyring = ["keyring>=25"]

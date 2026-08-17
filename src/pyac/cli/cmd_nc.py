@@ -26,7 +26,7 @@ from typing import Protocol
 
 from pyac._logging import configure as configure_logging
 from pyac.auth.client import authenticate, build_ssl_context, logout
-from pyac.cli import buffer_bytes
+from pyac.cli import apply_profile, buffer_bytes, finalize_route_policy
 from pyac.cli.cmd_probe import parse_gateway
 from pyac.cli.cmd_up import parse_listen, parse_socks_auth, read_password
 from pyac.config import Credentials
@@ -65,6 +65,12 @@ def register(
     parser.add_argument("-u", "--user", help="username (direct mode)")
     parser.add_argument("-g", "--group", help="tunnel group (direct mode)")
     parser.add_argument(
+        "--profile",
+        metavar="NAME",
+        help="direct mode: fill in unset connect flags from [profiles.NAME] in the "
+        "config file (see --config); explicit flags always win",
+    )
+    parser.add_argument(
         "--pin",
         metavar="sha256:HEX",
         help="require this certificate fingerprint (openconnect --servercert)",
@@ -81,8 +87,9 @@ def register(
     parser.add_argument(
         "--route-policy",
         choices=("auto", "all"),
-        default="auto",
-        help="auto refuses addresses outside the advertised split routes; all tries anyway",
+        default=None,
+        help="auto refuses addresses outside the advertised split routes; all tries "
+        "anyway (default auto)",
     )
     parser.add_argument(
         "--timeout", type=float, default=30.0, help="seconds to wait for the connection"
@@ -194,12 +201,30 @@ def run(args: argparse.Namespace) -> int:
     # Logging must never reach stdout here; stdout is the connection.
     configure_logging(args.verbose, stream=sys.stderr)
 
-    if bool(args.via) == bool(args.gateway):
+    if args.via and args.profile:
+        print(
+            "error: --profile has no effect with --via (nothing to authenticate)", file=sys.stderr
+        )
+        return 2
+    if args.via and args.gateway:
         print("error: pass exactly one of --via or --gateway", file=sys.stderr)
         return 2
-    if args.gateway and not args.user:
-        print("error: --gateway needs --user", file=sys.stderr)
-        return 2
+
+    if not args.via:
+        try:
+            apply_profile(args)
+        except PyacError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        finalize_route_policy(args)
+        if not args.gateway:
+            print(
+                "error: pass --gateway (directly or via --profile), or use --via", file=sys.stderr
+            )
+            return 2
+        if not args.user:
+            print("error: --gateway needs --user (directly or via --profile)", file=sys.stderr)
+            return 2
 
     try:
         return asyncio.run(_run(args))
@@ -246,7 +271,7 @@ async def _run_direct(args: argparse.Namespace) -> int:
     credentials = Credentials(
         username=args.user,
         # Never from stdin: stdin is carrying the connection.
-        password=read_password(False),
+        password=read_password(False, profile=args.profile, username=args.user),
         group=args.group,
     )
 

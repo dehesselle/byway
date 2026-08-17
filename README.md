@@ -42,6 +42,49 @@ Credentials never go in `argv`: use `PYAC_PASSWORD`, `--password-stdin`, or the 
 prompt. Certificate pinning is `--pin sha256:<hex>`, compatible with openconnect's
 `--servercert`, and is the right answer for an internal CA — not `--no-verify`.
 
+## Profiles
+
+Retyping the same gateway, user, group, and pin for every invocation gets old fast. Save them
+once as a named profile and pass `--profile <name>` to `up`, `get`, or `nc` (direct mode)
+instead — `probe` and `nc --via` take no credentials, so they have no use for one.
+
+The config file lives where [platformdirs](https://pypi.org/project/platformdirs/) puts
+per-user config for `pyac` — `~/.config/pyac/config.toml` on Linux, `~/Library/Application
+Support/pyac/config.toml` on macOS, `%APPDATA%\pyac\config.toml` on Windows — or wherever
+`--config PATH` points instead. Each VPN gets a `[profiles.<name>]` table:
+
+```toml
+[profiles.work]
+gateway = "vpn.corp.example"
+user = "rene"
+group = "employees"
+pin = "sha256:deadbeef..."
+# verify = false
+# mtu = 1400
+# buffer = 2048
+# route_policy = "all"
+```
+
+Only `gateway` is required. `pyac up --profile work` then behaves exactly like `pyac up
+vpn.corp.example -u rene -g employees --pin sha256:deadbeef...`.
+
+**Any flag given on the command line overrides the same setting in the profile** — the
+profile only fills in what you didn't pass. This has one asymmetric case worth knowing:
+`verify = false` in a profile disables gateway certificate verification, same as passing
+`--no-verify` directly; there is currently no flag to force verification back *on* for a
+profile that disables it, so pin the certificate instead if you need that (`--pin` always
+works regardless of `verify`).
+
+No password ever goes in the TOML file. Passwords are resolved, in order: `--password-stdin`,
+`PYAC_PASSWORD`, a `keyring` lookup (only when `--profile` was used, keyed on the profile name
+and the resolved username), then the interactive prompt. To use the keyring step, install the
+extra and store the password with the standalone `keyring` CLI it ships:
+
+```console
+$ pip install pyac[keyring]
+$ keyring set work rene
+```
+
 ## In your own program
 
 ```python

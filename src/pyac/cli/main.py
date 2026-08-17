@@ -49,6 +49,13 @@ def add_global_flags(parser: argparse.ArgumentParser, *, suppress: bool = False)
         default=default(False),
         help="machine-readable output",
     )
+    parser.add_argument(
+        "--config",
+        metavar="PATH",
+        default=default(None),
+        help="config file for --profile (default: the platformdirs user config "
+        "dir for pyac, e.g. ~/.config/pyac/config.toml)",
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
