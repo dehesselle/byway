@@ -20,10 +20,15 @@ _PACKET_HEADER = struct.Struct("<IIII")
 
 
 class PcapWriter:
-    """Appends raw IP packets to a pcap file.
+    """Appends raw IP packets to a pcap file, in both directions.
 
-    Not thread-safe and not asynchronous: it is called from the driver task
-    only, and writes are small and buffered.
+    ``LINKTYPE_RAW`` has no link-layer header and therefore no direction field,
+    which needs none: the tunnel address appears as the source of everything we
+    send and the destination of everything we receive, so Wireshark reads the
+    conversation correctly from the IP headers alone.
+
+    Not thread-safe and not asynchronous. Both callers are tasks on the one
+    event loop, so calls cannot interleave, and writes are small and buffered.
     """
 
     def __init__(self, path: str | Path) -> None:

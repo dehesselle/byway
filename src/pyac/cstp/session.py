@@ -128,6 +128,12 @@ class CstpSession:
             return
         self._outbound.append(encode_frame(PacketType.DATA, packet))
         self.frames_out["DATA"] += 1
+        # Captured here rather than in the writer task, which holds encoded
+        # frames rather than IP packets. A one-sided capture is half a
+        # diagnostic: Wireshark cannot compute RTT, spot a retransmission, or
+        # learn our window scale without having seen both directions.
+        if self._pcap is not None:
+            self._pcap.write(packet)
         self._writer_wake.set()
 
     def take_inbound(self) -> list[bytes]:

@@ -13,10 +13,16 @@ from pathlib import Path
 
 import pytest
 
+from pyac._pcap import PcapWriter
 from pyac.cstp.framing import PacketType, encode_frame
 from pyac.cstp.session import CstpSession
 from pyac.errors import HandshakeRejected, ProtocolParseError
 from tests.fakegw import FakeGateway
+from tests.unit.test_pcap import records as pcap_records
+
+
+def pcap_packets(path: Path) -> list[bytes]:
+    return [record[4] for record in pcap_records(path)]
 
 
 @pytest.fixture
@@ -134,6 +140,49 @@ async def test_packets_travel_in_both_directions(certs: Path) -> None:
 
     assert gateway.received_packets == [outbound]
     assert received == [inbound]
+
+
+async def test_the_pcap_records_both_directions(certs: Path, tmp_path: Path) -> None:
+    """A one-sided capture cannot show an RTT, a retransmission, or a window
+    scale, which is most of what a pcap is opened to find out."""
+    outbound = b"\x45\x00" + b"we sent this"
+    inbound = b"\x45\x00" + b"they sent this"
+    path = tmp_path / "both.pcap"
+
+    with PcapWriter(path) as pcap:
+        async with (
+            FakeGateway([], certs_dir=certs) as gateway,
+            session_for(gateway, pcap=pcap) as session,
+        ):
+            session.send(outbound)
+            await wait_for(gateway.packet_received)
+
+            gateway.send_packet(inbound)
+            await wait_for(session.wake)
+            session.take_inbound()
+
+    captured = pcap_packets(path)
+    assert outbound in captured
+    assert inbound in captured
+
+
+async def test_control_frames_stay_out_of_the_pcap(certs: Path, tmp_path: Path) -> None:
+    """DPD and keepalive are not IP packets; writing them would produce a file
+    Wireshark reads as corrupt IP headers."""
+    path = tmp_path / "control.pcap"
+
+    with PcapWriter(path) as pcap:
+        async with (
+            FakeGateway([], certs_dir=certs) as gateway,
+            session_for(gateway, pcap=pcap) as session,
+        ):
+            gateway.send_dpd()
+            await asyncio.sleep(0.05)
+            gateway.send_packet(b"\x45\x00data")
+            await wait_for(session.wake)
+            session.take_inbound()
+
+    assert pcap_packets(path) == [b"\x45\x00data"]
 
 
 async def test_frames_reassemble_across_tiny_tls_writes(certs: Path) -> None:

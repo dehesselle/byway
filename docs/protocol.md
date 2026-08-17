@@ -73,6 +73,31 @@ other gateways (ocserv may well tolerate it), but it must never be the default.
 * Assigns a fresh address on each connection (`172.29.29.3`, `.4`, `.5`, …),
   so sessions leak if `/+webvpn+/webvpn_logout.html` is not called on exit.
 
+## First real fetch through the stack
+
+`pyac get 207.254.103.218 http://10.221.188.20/` — nginx 1.29.1, 908 bytes of
+HTML, 78 ms total with a 47 ms connect. Tunnel `172.29.29.3/255.255.0.0`,
+MTU 1383 (so MSS 1343), split route `10.221.188.0/23`.
+
+Five inbound frames, and nothing else:
+
+| # | Bytes | Segment |
+|---|---|---|
+| 1 | 48 | SYN-ACK, 8 bytes of TCP options |
+| 2 | 40 | bare ACK of the request |
+| 3 | 1181 | the entire response, one segment (1141 payload) |
+| 4 | 40 | server FIN |
+| 5 | 40 | ACK of our FIN |
+
+No retransmission, no duplicate ACK, a clean four-way close, and connect
+completing in exactly one round trip. Worth keeping as the reference for what
+a healthy exchange looks like: a run that produces materially more frames than
+this for a single small request has something wrong with it.
+
+The 8 option bytes are MSS plus either window-scale or SACK-permitted — both
+are 8 bytes once padded, and the summary output cannot tell them apart. Check a
+pcap before concluding which.
+
 ### Routine headers carrying nothing actionable
 
 `X-CSTP-Version`, `-Protocol`, `-Lease-Duration`,

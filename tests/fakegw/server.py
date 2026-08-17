@@ -18,6 +18,8 @@ from types import TracebackType
 import trustme
 
 from pyac.cstp.framing import FrameDecoder, PacketType, encode_frame
+from pyac.errors import ProtocolParseError
+from tests.vnet.peer import TcpPeer
 
 MAX_REQUEST_BYTES = 256 * 1024
 
@@ -73,6 +75,11 @@ class FakeGateway:
     write_chunk_size: int | None = None
     """Split every tunnel write into chunks of this size, to prove the client
     reassembles frames across arbitrary TLS record boundaries."""
+
+    peer: TcpPeer | None = None
+    """If set, inbound IP packets are terminated here and the replies sent back
+    down the tunnel -- which turns the fake gateway into a whole network, so a
+    real HTTP request can be served through the full stack."""
 
     requests: list[Request] = field(default_factory=list)
     connect_headers: dict[str, str] = field(default_factory=dict)
@@ -217,6 +224,7 @@ class FakeGateway:
                 if frame.type == PacketType.DATA:
                     self.received_packets.append(frame.payload)
                     self.packet_received.set()
+                    self._route(frame.payload)
                 elif frame.type == PacketType.DPD_OUT:
                     self._write_frames(encode_frame(PacketType.DPD_RESP))
                 elif frame.type == PacketType.DPD_RESP:
@@ -226,6 +234,17 @@ class FakeGateway:
                 elif frame.type == PacketType.DISCONN:
                     return
             await writer.drain()
+
+    def _route(self, packet: bytes) -> None:
+        """Hand an inbound packet to the peer, if there is one."""
+        if self.peer is None:
+            return
+        try:
+            replies = self.peer.handle(packet)
+        except ProtocolParseError:
+            return  # a real network drops what it cannot parse, silently
+        for reply in replies:
+            self._write_frames(encode_frame(PacketType.DATA, reply))
 
     async def _read_head(self, reader: asyncio.StreamReader) -> Request | None:
         head = await reader.readuntil(b"\r\n\r\n")
