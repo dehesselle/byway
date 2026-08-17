@@ -69,6 +69,11 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "ASYNC", "TID"]
 "src/pyac/cli/**" = ["TID251"]
 "tests/**" = ["TID251"]
 
+# httpcore_backend.py implements httpcore's AsyncNetworkBackend, whose methods
+# take a `timeout` argument. The signature is not ours to choose, and renaming
+# it would simply break the seam ASYNC109 is trying to protect.
+"src/pyac/httpcore_backend.py" = ["TID251", "ASYNC109"]
+
 # ---------------------------------------------------------------------------
 
 [tool.mypy]

@@ -1,31 +1,32 @@
 """``pyac get`` -- fetch one URL from inside the tunnel.
 
-The command that closes the thin slice. Everything the project has built so
-far is on the path: aggregate-auth, the CSTP tunnel, framing, the userspace
-IPv4 stack, and a real TCP connection carrying a real request to a real
-server. If this works against the gateway, the design works.
+Everything the project has built is on this path: aggregate-auth, the CSTP
+tunnel, framing, the userspace IPv4 stack, a TCP connection, TLS over that
+connection, and httpx driving the lot. If this works against the gateway, the
+design works.
 
-Two deliberate limits, both temporary:
+The request itself is httpx's, through :mod:`pyac.httpcore_backend`, so
+chunked encoding, keep-alive, redirects, and content decoding are all handled
+by a library that has seen far more of the web than we have.
 
-* **Plain HTTP only.** TLS *inside* the tunnel needs the ``ssl.MemoryBIO``
-  wrapper that arrives with the httpx transport, at which point this command
-  becomes a thin shell over ``httpx`` and the response reader below goes away.
-  An ``https://`` URL is refused rather than silently downgraded.
-* **IP addresses only.** There is no in-tunnel resolver yet, and resolving an
-  internal name through the *host's* resolver would both leak it and usually
-  fail. Refusing with an explanation beats a confusing answer.
+One limit remains, and it is not temporary in the same way the others were:
+**IP addresses only.** This gateway advertises no DNS servers, so there is
+nothing to resolve against, and resolving an internal name through the *host's*
+resolver would both leak it and usually fail.
 """
 
 from __future__ import annotations
 
 import argparse
 import asyncio
-import contextlib
 import ipaddress
 import json
+import ssl
 import sys
 import time
 from dataclasses import dataclass
+
+import httpx
 
 from pyac._logging import configure as configure_logging
 from pyac._pcap import PcapWriter
@@ -34,7 +35,8 @@ from pyac.cli.cmd_probe import parse_gateway
 from pyac.cli.cmd_up import read_password
 from pyac.config import Credentials, GatewayConfig
 from pyac.cstp.session import CstpSession
-from pyac.errors import ProtocolParseError, PyacError, RouteNotAllowed
+from pyac.errors import PyacError, RouteNotAllowed
+from pyac.httpcore_backend import TunnelTransport
 from pyac.routing import describe_routes, route_allows
 from pyac.runtime.driver import Driver
 
@@ -85,6 +87,24 @@ def register(
     parser.add_argument(
         "--timeout", type=float, default=30.0, help="seconds to wait for the connection"
     )
+    parser.add_argument("-L", "--location", action="store_true", help="follow redirects")
+    parser.add_argument(
+        "-k",
+        "--insecure",
+        action="store_true",
+        help="do not verify the target's certificate (distinct from --no-verify, "
+        "which is about the gateway)",
+    )
+    parser.add_argument(
+        "--cacert", metavar="FILE", help="CA bundle for verifying the target's certificate"
+    )
+    parser.add_argument(
+        "--tls-name",
+        metavar="NAME",
+        help="name to send as SNI and verify the certificate against; defaults to "
+        "the Host header, since a certificate is issued for a name and we can "
+        "only dial an address",
+    )
     parser.add_argument(
         "--route-policy",
         choices=("auto", "all"),
@@ -102,20 +122,25 @@ class Target:
     host: str
     port: int
     path: str
+    scheme: str = "http"
+
+    @property
+    def authority(self) -> str:
+        default = 443 if self.scheme == "https" else 80
+        return self.host if self.port == default else f"{self.host}:{self.port}"
+
+    @property
+    def url(self) -> str:
+        return f"{self.scheme}://{self.authority}{self.path}"
 
 
 def parse_url(url: str) -> Target:
-    """Split an ``http://`` URL. Raises :class:`ValueError` with a usable message."""
+    """Split a URL. Raises :class:`ValueError` with a usable message."""
     scheme, separator, rest = url.partition("://")
     if not separator:
         scheme, rest = "http", url
-    elif scheme == "https":
-        raise ValueError(
-            "https is not supported yet: TLS inside the tunnel needs the MemoryBIO "
-            "wrapper that lands with the httpx transport. Use http:// for now."
-        )
-    elif scheme != "http":
-        raise ValueError(f"unsupported scheme {scheme!r}; only http is available")
+    elif scheme not in ("http", "https"):
+        raise ValueError(f"unsupported scheme {scheme!r}; only http and https are available")
 
     authority, slash, path = rest.partition("/")
     host, _, port = authority.partition(":")
@@ -129,7 +154,12 @@ def parse_url(url: str) -> Target:
             "probably fail. Pass the address directly."
         ) from None
 
-    return Target(host=host, port=int(port) if port else 80, path=(slash + path) or "/")
+    return Target(
+        scheme=scheme,
+        host=host,
+        port=int(port) if port else (443 if scheme == "https" else 80),
+        path=(slash + path) or "/",
+    )
 
 
 def parse_header(raw: str) -> tuple[str, str]:
@@ -139,95 +169,34 @@ def parse_header(raw: str) -> tuple[str, str]:
     return name.strip(), value.strip()
 
 
-def build_request(target: Target, method: str, headers: list[tuple[str, str]]) -> bytes:
-    supplied = {name.lower() for name, _ in headers}
-    lines = [f"{method.upper()} {target.path} HTTP/1.1"]
-    if "host" not in supplied:
-        host = target.host if target.port == 80 else f"{target.host}:{target.port}"
-        lines.append(f"Host: {host}")
-    if "connection" not in supplied:
-        # Closing after one response is what lets the reader below stop at EOF
-        # instead of implementing keep-alive framing it will never need.
-        lines.append("Connection: close")
-    lines += [f"{name}: {value}" for name, value in headers]
-    return ("\r\n".join(lines) + "\r\n\r\n").encode()
+def tls_name(args: argparse.Namespace, headers: list[tuple[str, str]]) -> str | None:
+    """Which name the target's certificate should be checked against.
+
+    There is no resolver, so the URL carries an address -- and a certificate is
+    never issued for one. Without this every HTTPS call would fail with "IP
+    address mismatch" and the only apparent remedy would be ``--insecure``,
+    which is precisely the wrong lesson to teach.
+    """
+    if args.tls_name:
+        return str(args.tls_name)
+    for name, value in headers:
+        if name.lower() == "host":
+            return value.partition(":")[0]
+    return None
 
 
-@dataclass(frozen=True, slots=True)
-class Response:
-    version: str
-    status: int
-    reason: str
-    headers: list[tuple[str, str]]
-    body: bytes
+def target_verification(args: argparse.Namespace) -> bool | str | ssl.SSLContext:
+    """How to verify the *target's* certificate, which is not the gateway's.
 
-    def header(self, name: str) -> str | None:
-        wanted = name.lower()
-        return next((value for key, value in self.headers if key.lower() == wanted), None)
-
-
-def parse_response(raw: bytes) -> Response:
-    """Parse a complete HTTP/1.1 response read to end of stream."""
-    head, separator, body = raw.partition(b"\r\n\r\n")
-    if not separator:
-        raise ProtocolParseError(
-            f"no header terminator in {len(raw)} bytes of response"
-            + (f": {raw[:80]!r}" if raw else " (the server sent nothing)")
-        )
-
-    lines = head.decode("latin-1").split("\r\n")
-    status_line = lines[0].split(" ", 2)
-    if len(status_line) < 2 or not status_line[0].startswith("HTTP/"):
-        raise ProtocolParseError(f"not an HTTP status line: {lines[0]!r}")
-
-    headers = [parse_header(line) for line in lines[1:] if line]
-    response = Response(
-        version=status_line[0],
-        status=int(status_line[1]),
-        reason=status_line[2] if len(status_line) > 2 else "",
-        headers=headers,
-        body=body,
-    )
-
-    encoding = response.header("transfer-encoding")
-    if encoding is not None and "chunked" in encoding.lower():
-        return Response(
-            version=response.version,
-            status=response.status,
-            reason=response.reason,
-            headers=headers,
-            body=decode_chunked(body),
-        )
-
-    length = response.header("content-length")
-    if length is not None and length.strip().isdigit():
-        return Response(
-            version=response.version,
-            status=response.status,
-            reason=response.reason,
-            headers=headers,
-            body=body[: int(length)],
-        )
-    return response
-
-
-def decode_chunked(body: bytes) -> bytes:
-    chunks: list[bytes] = []
-    rest = body
-    while True:
-        line, separator, rest = rest.partition(b"\r\n")
-        if not separator:
-            raise ProtocolParseError("truncated chunked body: no size line")
-        try:
-            size = int(line.split(b";", 1)[0], 16)
-        except ValueError:
-            raise ProtocolParseError(f"bad chunk size {line!r}") from None
-        if size == 0:
-            return b"".join(chunks)
-        if len(rest) < size:
-            raise ProtocolParseError(f"truncated chunk: wanted {size}, have {len(rest)}")
-        chunks.append(rest[:size])
-        rest = rest[size:].removeprefix(b"\r\n")
+    Two separate trust decisions live in this command, and conflating them
+    would be a security bug: ``--no-verify``/``--pin`` govern the TLS to the
+    VPN gateway, ``--insecure``/``--cacert`` the TLS to the host inside it.
+    """
+    if args.insecure:
+        return False
+    if args.cacert:
+        return str(args.cacert)
+    return True
 
 
 # --- the command -----------------------------------------------------------
@@ -306,7 +275,7 @@ async def _run(
         await logout(gateway, success.session_token)
 
     _report(response, timing, args)
-    return 0 if response.status < 400 else 1
+    return 0 if response.status_code < 400 else 1
 
 
 @dataclass(frozen=True, slots=True)
@@ -320,40 +289,48 @@ async def _fetch(
     target: Target,
     args: argparse.Namespace,
     headers: list[tuple[str, str]],
-) -> tuple[Response, Timing]:
-    started = time.monotonic()
+) -> tuple[httpx.Response, Timing]:
     print(f"connecting to {target.host}:{target.port}...", file=sys.stderr)
-    stream = await driver.connect(target.host, target.port, timeout=args.timeout)
-    connected = time.monotonic()
+    # verify goes on the transport, not the client: httpx only applies its own
+    # to the transport it builds, so passing it here would do nothing at all.
+    transport = TunnelTransport(
+        driver, verify=target_verification(args), connect_timeout=args.timeout
+    )
 
-    await stream.write(build_request(target, args.method, headers))
-    # Read to end of stream: we asked for Connection: close, so EOF is the
-    # message boundary and no keep-alive framing is needed.
-    raw = await stream.read_all(limit=DEFAULT_BODY_LIMIT)
+    started = time.monotonic()
+    async with httpx.AsyncClient(
+        transport=transport,
+        follow_redirects=args.location,
+        timeout=args.timeout,
+    ) as client:
+        name = tls_name(args, headers)
+        response = await client.request(
+            args.method.upper(),
+            target.url,
+            headers=headers or None,
+            extensions={"sni_hostname": name} if name else {},
+        )
+        await response.aread()
     finished = time.monotonic()
 
-    # Give our own FIN a chance to leave before the driver is torn down, so the
-    # server sees a clean close rather than an abandoned half-open connection.
-    stream.close()
-    with contextlib.suppress(TimeoutError):
-        await asyncio.wait_for(stream.wait_closed(), timeout=2.0)
-
-    return parse_response(raw), Timing(
-        connect_ms=(connected - started) * 1000,
+    return response, Timing(
+        connect_ms=transport.backend.last_connect_ms,
         total_ms=(finished - started) * 1000,
     )
 
 
-def _report(response: Response, timing: Timing, args: argparse.Namespace) -> None:
+def _report(response: httpx.Response, timing: Timing, args: argparse.Namespace) -> None:
+    body = response.content
     if args.json:
         print(
             json.dumps(
                 {
-                    "status": response.status,
-                    "reason": response.reason,
-                    "version": response.version,
-                    "headers": [{"name": n, "value": v} for n, v in response.headers],
-                    "body_bytes": len(response.body),
+                    "status": response.status_code,
+                    "reason": response.reason_phrase,
+                    "version": response.http_version,
+                    "url": str(response.url),
+                    "headers": [{"name": n, "value": v} for n, v in response.headers.items()],
+                    "body_bytes": len(body),
                     "connect_ms": round(timing.connect_ms, 1),
                     "total_ms": round(timing.total_ms, 1),
                 },
@@ -361,19 +338,19 @@ def _report(response: Response, timing: Timing, args: argparse.Namespace) -> Non
             )
         )
     else:
-        print(f"{response.version} {response.status} {response.reason}".rstrip(), file=sys.stderr)
-        for name, value in response.headers:
+        status = f"{response.http_version} {response.status_code} {response.reason_phrase}"
+        print(status.rstrip(), file=sys.stderr)
+        for name, value in response.headers.items():
             print(f"{name}: {value}", file=sys.stderr)
         print(
-            f"\n{len(response.body)} bytes in {timing.total_ms:.0f} ms "
-            f"(connect {timing.connect_ms:.0f} ms)",
+            f"\n{len(body)} bytes in {timing.total_ms:.0f} ms (connect {timing.connect_ms:.0f} ms)",
             file=sys.stderr,
         )
 
     if args.output:
         with open(args.output, "wb") as handle:
-            handle.write(response.body)
+            handle.write(body)
         print(f"body written to {args.output}", file=sys.stderr)
     elif not args.json:
-        sys.stdout.buffer.write(response.body)
+        sys.stdout.buffer.write(body)
         sys.stdout.buffer.flush()

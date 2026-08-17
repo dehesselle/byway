@@ -20,6 +20,14 @@ from pyac.net.tcp import Flag, build_tcp, parse_tcp, seq_add
 Handler = Callable[[bytes], bytes | None]
 """Given everything received so far, return a response, or None for "need more"."""
 
+StreamHandler = Callable[[bytes], bytes]
+"""Given the bytes that just arrived, return bytes to send back.
+
+The incremental alternative to :data:`Handler`, for endpoints that cannot be
+expressed as one request and one response -- TLS being the obvious case, since
+its handshake is several rounds before any application data exists.
+"""
+
 
 @dataclass
 class Connection:
@@ -43,6 +51,8 @@ class Connection:
     Ignoring it would silently cap the client's advertised window at 64 KiB and
     quietly hide any window-scaling bug on its side.
     """
+    stream: StreamHandler | None = None
+    """Per-connection incremental handler, when the peer was given a factory."""
     pending: bytearray = field(default_factory=bytearray)
     """Response bytes not yet sent, because the client's window is full.
 
@@ -59,6 +69,9 @@ class TcpPeer:
     ip: str
     port: int
     handler: Handler
+    stream_factory: Callable[[], StreamHandler] | None = None
+    """Set instead of relying on ``handler`` for incremental endpoints. Called
+    once per connection, so each gets its own state."""
     isn: int = 900_000
     mss: int = 1400
     window: int = 65535
@@ -94,6 +107,8 @@ class TcpPeer:
                 snd_nxt=self.isn,
                 rcv_nxt=seq_add(segment.seq, 1),
             )
+            if self.stream_factory is not None:
+                connection.stream = self.stream_factory()
             connection.peer_window = segment.window  # a SYN's window is unscaled
             if self.window_scale is not None and segment.window_scale is not None:
                 connection.peer_wscale = segment.window_scale
@@ -123,7 +138,12 @@ class TcpPeer:
             connection.rcv_nxt = seq_add(connection.rcv_nxt, len(segment.payload))
             out.append(self._segment(connection, Flag.ACK))
 
-            if not connection.responded:
+            if connection.stream is not None:
+                # Incremental: the endpoint decides when, and whether, to
+                # answer -- and never closes on our behalf, since keep-alive
+                # is the whole point of speaking HTTP over TLS.
+                connection.pending += connection.stream(segment.payload)
+            elif not connection.responded:
                 response = self.handler(bytes(connection.received))
                 if response is not None:
                     connection.responded = True

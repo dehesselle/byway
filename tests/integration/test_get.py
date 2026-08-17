@@ -56,6 +56,10 @@ def options(**overrides: object) -> argparse.Namespace:
         "output": None,
         "timeout": 10.0,
         "route_policy": "auto",
+        "location": False,
+        "insecure": False,
+        "cacert": None,
+        "tls_name": None,
     }
     return argparse.Namespace(**{**defaults, **overrides})
 
@@ -112,8 +116,10 @@ async def test_the_request_reaches_the_server_intact(certs: Path) -> None:
     (connection,) = peer.connections.values()
     request = bytes(connection.received)
     assert request.startswith(b"GET /v1/things HTTP/1.1\r\n")
-    assert b"Host: 10.11.12.13\r\n" in request
-    assert b"Connection: close\r\n" in request
+    assert b"host: 10.11.12.13\r\n" in request.lower()
+    # No `Connection: close`: since M7 the request is httpx's, and it keeps the
+    # connection alive. The response is framed by Content-Length, not by EOF.
+    assert b"connection: close" not in request.lower()
 
 
 async def test_a_body_larger_than_one_segment_arrives_whole(certs: Path, tmp_path: Path) -> None:
@@ -249,4 +255,7 @@ async def test_json_output_is_machine_readable(
     report = json.loads(capsys.readouterr().out)
     assert report["status"] == 200
     assert report["body_bytes"] == 7
-    assert {"name": "Content-Length", "value": "7"} in report["headers"]
+    assert report["url"] == "http://10.11.12.13/"
+    # httpx normalises header names to lower case, which is correct: HTTP
+    # header names are case-insensitive.
+    assert {"name": "content-length", "value": "7"} in report["headers"]
