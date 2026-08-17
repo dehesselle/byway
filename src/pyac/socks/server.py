@@ -76,6 +76,7 @@ class Socks5Server:
         self._route_policy = route_policy
         self._server: asyncio.Server | None = None
         self._bound_port = port
+        self._handlers: set[asyncio.Task[None]] = set()
 
         if not allow_non_loopback and not _is_loopback(host):
             raise NetworkError(
@@ -105,12 +106,31 @@ class Socks5Server:
     def address(self) -> str:
         return f"{self._host}:{self.port}"
 
-    async def aclose(self) -> None:
-        if self._server is not None:
-            self._server.close()
-            with contextlib.suppress(Exception):
+    async def aclose(self, grace: float = 2.0) -> None:
+        """Stop listening, then tear down whatever is still connected.
+
+        Bounded on purpose, in both directions. ``Server.wait_closed`` waits
+        for in-flight handlers from Python 3.12 on, so waiting on it alone
+        means an idle SSH session makes Ctrl-C on ``pyac up`` do nothing at
+        all. Cancelling immediately is no better: a relay that is *already*
+        finishing gets a RST instead of its FIN exchange. So give them ``grace``
+        seconds to end by themselves, then cancel the stragglers.
+        """
+        if self._server is None:
+            return
+        self._server.close()
+
+        if self._handlers:
+            _done, pending = await asyncio.wait(set(self._handlers), timeout=grace)
+            for task in pending:
+                task.cancel()
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)
+
+        with contextlib.suppress(Exception):
+            async with asyncio.timeout(grace):
                 await self._server.wait_closed()
-            self._server = None
+        self._server = None
 
     async def __aenter__(self) -> Socks5Server:
         await self.start()
@@ -131,6 +151,10 @@ class Socks5Server:
         self.active += 1
         stream: TcpStream | None = None
         relayed = False
+        # Tracked so shutdown can cancel a relay rather than wait on one.
+        task = asyncio.current_task()
+        if task is not None:
+            self._handlers.add(task)
         try:
             await self._negotiate(reader, writer)
             request = await self._read_request(reader)
@@ -159,6 +183,8 @@ class Socks5Server:
             pass  # a client hanging up mid-negotiation is routine
         finally:
             self.active -= 1
+            if task is not None:
+                self._handlers.discard(task)
             if stream is not None and not relayed:
                 # Only an abandoned connection gets a RST. Resetting one that
                 # just closed cleanly would undo the FIN exchange, skip

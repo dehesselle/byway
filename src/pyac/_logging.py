@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import logging
 import re
+import sys
+from typing import TextIO
 
 # webvpn cookies and session tokens are long opaque strings; ASA's own tokens
 # look like "35B466@-123@A96E@AE5E...". Match generously and redact the tail.
@@ -41,12 +43,18 @@ def redact(text: str) -> str:
     return text
 
 
-def configure(verbosity: int) -> None:
-    """Set up logging. 0 = warnings, 1 = debug, 2 = debug with timestamps."""
+def configure(verbosity: int, stream: TextIO | None = None) -> None:
+    """Set up logging. 0 = warnings, 1 = debug, 2 = debug with timestamps.
+
+    ``stream`` defaults to stderr, which is also what it must be: ``pyac nc``
+    relays a connection over stdout, so a single log line landing there would
+    corrupt the stream it is trying to describe. Callers that care pass it
+    explicitly rather than trusting the default to stay put.
+    """
     level = logging.WARNING if verbosity == 0 else logging.DEBUG
     fmt = "%(message)s" if verbosity < 2 else "%(asctime)s %(name)s %(message)s"
 
-    handler = logging.StreamHandler()
+    handler = logging.StreamHandler(stream if stream is not None else sys.stderr)
     handler.setFormatter(logging.Formatter(fmt, datefmt="%H:%M:%S"))
     handler.addFilter(RedactingFilter())
 

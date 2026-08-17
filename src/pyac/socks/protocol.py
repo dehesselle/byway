@@ -21,6 +21,7 @@ from pyac.errors import (
     ConnectionRefused,
     ConnectionTimeout,
     HostUnreachable,
+    NetworkError,
     ProtocolParseError,
     PyacError,
     ResolveError,
@@ -203,6 +204,93 @@ def build_reply(reply: Reply, host: str = "0.0.0.0", port: int = 0) -> bytes:
     except ValueError:
         packed = b"\x00\x00\x00\x00"
     return bytes((VERSION, int(reply), 0x00, ATYP_IPV4)) + packed + struct.pack("!H", port)
+
+
+# --- the client half ---------------------------------------------------------
+#
+# Needed by ``pyac nc --via``, which talks to a proxy rather than serving one.
+# Keeping both halves here makes the pair testable against each other.
+
+
+def build_greeting(methods: tuple[int, ...] = (AUTH_NONE,)) -> bytes:
+    return bytes((VERSION, len(methods), *methods))
+
+
+def parse_method_reply(data: bytes) -> int:
+    if len(data) < 2 or data[0] != VERSION:
+        raise ProtocolParseError(f"not a SOCKS5 method reply: {data[:2]!r}")
+    return data[1]
+
+
+def build_userpass(username: str, password: str) -> bytes:
+    user, secret = username.encode(), password.encode()
+    if len(user) > 255 or len(secret) > 255:
+        raise ProtocolParseError("RFC 1929 limits both fields to 255 bytes")
+    return bytes((AUTH_VERSION, len(user))) + user + bytes((len(secret),)) + secret
+
+
+def parse_auth_reply(data: bytes) -> bool:
+    if len(data) < 2 or data[0] != AUTH_VERSION:
+        raise ProtocolParseError(f"not an RFC 1929 reply: {data[:2]!r}")
+    return data[1] == AUTH_SUCCESS
+
+
+def build_request(host: str, port: int, command: int = CMD_CONNECT) -> bytes:
+    """Build a request, sending an address as an address wherever possible."""
+    try:
+        address = bytes((ATYP_IPV4,)) + ipaddress.IPv4Address(host).packed
+    except ValueError:
+        name = host.encode("ascii", "replace")
+        if len(name) > 255:
+            raise ProtocolParseError(f"host name is {len(name)} bytes, maximum is 255") from None
+        address = bytes((ATYP_DOMAIN, len(name))) + name
+    return bytes((VERSION, command, 0x00)) + address + struct.pack("!H", port)
+
+
+REPLY_PREFIX = 5
+"""Same shape as a request: the fifth byte sizes a domain name."""
+
+
+def reply_length(prefix: bytes) -> int:
+    if len(prefix) < REPLY_PREFIX:
+        raise ProtocolParseError(f"need {REPLY_PREFIX} bytes to size a reply")
+    return request_length(prefix)
+
+
+def parse_reply(data: bytes) -> tuple[Reply, str, int]:
+    """Parse a reply into ``(code, bound address, bound port)``."""
+    if len(data) < 4 or data[0] != VERSION:
+        raise ProtocolParseError(f"not a SOCKS5 reply: {data[:4]!r}")
+    try:
+        code = Reply(data[1])
+    except ValueError:
+        code = Reply.GENERAL_FAILURE  # an unknown code is still a failure
+
+    atyp, body = data[3], data[4:]
+    if atyp == ATYP_IPV4 and len(body) >= 6:
+        return code, str(ipaddress.IPv4Address(body[:4])), struct.unpack("!H", body[4:6])[0]
+    if atyp == ATYP_DOMAIN and body and len(body) >= 1 + body[0] + 2:
+        length = body[0]
+        name = body[1 : 1 + length].decode("ascii", "replace")
+        return code, name, struct.unpack("!H", body[1 + length : 3 + length])[0]
+    if atyp == ATYP_IPV6 and len(body) >= 18:
+        return code, str(ipaddress.IPv6Address(body[:16])), struct.unpack("!H", body[16:18])[0]
+    raise ProtocolParseError(f"truncated reply for address type {atyp}")
+
+
+def error_for(reply: Reply, target: str) -> NetworkError:
+    """Turn a proxy's refusal back into the error it stands for."""
+    if reply is Reply.CONNECTION_REFUSED:
+        return ConnectionRefused(f"{target} refused the connection")
+    if reply is Reply.NOT_ALLOWED:
+        return RouteNotAllowed(f"the proxy will not route to {target}")
+    if reply is Reply.HOST_UNREACHABLE:
+        return HostUnreachable(f"{target} is unreachable through the proxy")
+    if reply is Reply.NETWORK_UNREACHABLE:
+        return HostUnreachable(f"no route to {target} through the proxy")
+    if reply is Reply.TTL_EXPIRED:
+        return ConnectionTimeout(f"the proxy timed out connecting to {target}")
+    return NetworkError(f"the proxy refused {target}: {reply.name.lower().replace('_', ' ')}")
 
 
 def reply_for(error: Exception) -> Reply:

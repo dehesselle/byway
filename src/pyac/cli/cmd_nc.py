@@ -1,0 +1,274 @@
+"""``pyac nc`` -- bridge stdin/stdout to one TCP connection inside the VPN.
+
+The point of this command is a single line in an SSH invocation::
+
+    ssh -o ProxyCommand="pyac nc --via 1080 %h %p" user@10.221.188.30
+
+``--via`` borrows a tunnel a running ``pyac up --socks`` already holds open.
+Prefer it: the alternative authenticates afresh for every ssh you start, which
+is slow and eats the gateway's concurrent-session limit.
+
+Direct mode (``--gateway``) exists for one-off use where no tunnel is running.
+It cannot read a password from stdin, because stdin is the data channel -- set
+``PYAC_PASSWORD`` or answer the console prompt.
+
+**Nothing may be printed to stdout.** Stdout is the connection. Every
+diagnostic here goes to stderr, and logging is configured to do the same.
+"""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import contextlib
+import sys
+from typing import Protocol
+
+from pyac._logging import configure as configure_logging
+from pyac.auth.client import authenticate, build_ssl_context, logout
+from pyac.cli.cmd_probe import parse_gateway
+from pyac.cli.cmd_up import parse_listen, parse_socks_auth, read_password
+from pyac.config import Credentials
+from pyac.cstp.session import CstpSession
+from pyac.errors import PyacError, RouteNotAllowed
+from pyac.routing import describe_routes, route_allows
+from pyac.runtime.driver import Driver, TcpStream
+from pyac.runtime.stdio import CHUNK, StdioBridge
+from pyac.socks.client import open_via_socks
+
+
+def register(
+    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
+    shared: argparse.ArgumentParser,
+) -> None:
+    parser = subparsers.add_parser(
+        "nc",
+        parents=[shared],
+        help="bridge stdio to a TCP connection inside the VPN",
+        description=(
+            "Connect to one host inside the VPN and relay it to stdin/stdout, for "
+            'use as an SSH ProxyCommand: ssh -o ProxyCommand="pyac nc --via 1080 %%h %%p"'
+        ),
+    )
+    parser.add_argument("host", help="address inside the VPN (not a name: there is no resolver)")
+    parser.add_argument("port", type=int, help="TCP port")
+
+    parser.add_argument(
+        "--via",
+        metavar="[HOST:]PORT",
+        help="reuse a running `pyac up --socks` proxy instead of authenticating",
+    )
+    parser.add_argument("--via-auth", metavar="USER:PASS", help="credentials for that proxy")
+
+    parser.add_argument("--gateway", help="gateway to authenticate against, if not using --via")
+    parser.add_argument("-u", "--user", help="username (direct mode)")
+    parser.add_argument("-g", "--group", help="tunnel group (direct mode)")
+    parser.add_argument(
+        "--pin",
+        metavar="sha256:HEX",
+        help="require this certificate fingerprint (openconnect --servercert)",
+    )
+    parser.add_argument("--no-verify", action="store_true", help="skip verification (prefer --pin)")
+    parser.add_argument("--mtu", type=int, help="override the MTU requested of the gateway")
+    parser.add_argument(
+        "--route-policy",
+        choices=("auto", "all"),
+        default="auto",
+        help="auto refuses addresses outside the advertised split routes; all tries anyway",
+    )
+    parser.add_argument(
+        "--timeout", type=float, default=30.0, help="seconds to wait for the connection"
+    )
+    parser.set_defaults(handler=run)
+
+
+# --- the two kinds of remote -------------------------------------------------
+
+
+class Remote(Protocol):
+    """What the bridge needs, however the bytes are carried.
+
+    ``close_write`` and ``close`` are deliberately separate. Ending our half
+    when stdin runs out must not discard what the far side is still sending --
+    conflating the two truncates the last reply of every session.
+    """
+
+    async def read(self, size: int) -> bytes: ...
+    async def write(self, data: bytes) -> None: ...
+    def close_write(self) -> None: ...
+    def close(self) -> None: ...
+
+
+class ProxiedRemote:
+    """An ``asyncio`` stream pair, presented as a :class:`Remote`."""
+
+    def __init__(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        self._reader = reader
+        self._writer = writer
+
+    async def read(self, size: int) -> bytes:
+        return await self._reader.read(size)
+
+    async def write(self, data: bytes) -> None:
+        self._writer.write(data)
+        await self._writer.drain()
+
+    def close_write(self) -> None:
+        # Not close(): that would shut both directions and lose the reply.
+        with contextlib.suppress(OSError, NotImplementedError, RuntimeError):
+            if self._writer.can_write_eof():
+                self._writer.write_eof()
+
+    def close(self) -> None:
+        self._writer.close()
+
+
+class TunnelRemote:
+    """A :class:`~pyac.runtime.driver.TcpStream`, presented as a :class:`Remote`."""
+
+    def __init__(self, stream: TcpStream) -> None:
+        self._stream = stream
+
+    async def read(self, size: int) -> bytes:
+        return await self._stream.read(size)
+
+    async def write(self, data: bytes) -> None:
+        await self._stream.write(data)
+
+    def close_write(self) -> None:
+        self._stream.close()  # sends FIN and keeps receiving
+
+    def close(self) -> None:
+        self._stream.close()
+
+
+# --- the bridge --------------------------------------------------------------
+
+
+async def bridge(remote: Remote, stdio: StdioBridge) -> None:
+    """Relay until the remote end finishes.
+
+    Stdin reaching EOF only *half*-closes: the far side may still have output
+    to send, and tearing down there would truncate it. The remote closing is
+    what ends the session.
+    """
+    upstream = asyncio.create_task(_to_remote(remote, stdio), name="pyac-nc-upstream")
+    downstream = asyncio.create_task(_to_stdout(remote, stdio), name="pyac-nc-downstream")
+    try:
+        await downstream
+    finally:
+        upstream.cancel()
+        with contextlib.suppress(asyncio.CancelledError, OSError, PyacError):
+            await upstream
+
+
+async def _to_remote(remote: Remote, stdio: StdioBridge) -> None:
+    while True:
+        data = await stdio.read()
+        if not data:
+            break
+        await remote.write(data)
+    remote.close_write()
+
+
+async def _to_stdout(remote: Remote, stdio: StdioBridge) -> None:
+    while True:
+        data = await remote.read(CHUNK)
+        if not data:
+            break
+        await stdio.write(data)
+
+
+# --- entry points ------------------------------------------------------------
+
+
+def run(args: argparse.Namespace) -> int:
+    # Logging must never reach stdout here; stdout is the connection.
+    configure_logging(args.verbose, stream=sys.stderr)
+
+    if bool(args.via) == bool(args.gateway):
+        print("error: pass exactly one of --via or --gateway", file=sys.stderr)
+        return 2
+    if args.gateway and not args.user:
+        print("error: --gateway needs --user", file=sys.stderr)
+        return 2
+
+    try:
+        return asyncio.run(_run(args))
+    except KeyboardInterrupt:
+        return 130
+    except PyacError as exc:
+        print(f"pyac nc: {exc}", file=sys.stderr)
+        return 1
+    except OSError as exc:
+        print(f"pyac nc: {exc}", file=sys.stderr)
+        return 1
+
+
+async def _run(args: argparse.Namespace) -> int:
+    if args.via:
+        return await _run_via(args)
+    return await _run_direct(args)
+
+
+async def _run_via(args: argparse.Namespace) -> int:
+    proxy_host, proxy_port = parse_listen(args.via)
+    username, password = parse_socks_auth(args.via_auth)
+
+    reader, writer = await open_via_socks(
+        proxy_host,
+        proxy_port,
+        args.host,
+        args.port,
+        username=username,
+        password=password,
+    )
+    remote = ProxiedRemote(reader, writer)
+    stdio = StdioBridge()
+    try:
+        await bridge(remote, stdio)
+    finally:
+        remote.close()
+        stdio.close()
+    return 0
+
+
+async def _run_direct(args: argparse.Namespace) -> int:
+    gateway = parse_gateway(args.gateway, pin=args.pin, no_verify=args.no_verify)
+    credentials = Credentials(
+        username=args.user,
+        # Never from stdin: stdin is carrying the connection.
+        password=read_password(False),
+        group=args.group,
+    )
+
+    success = await authenticate(gateway, credentials)
+    session = CstpSession(
+        host=gateway.host,
+        port=gateway.port,
+        session_token=success.session_token,
+        ssl_context=build_ssl_context(gateway),
+        user_agent=gateway.user_agent,
+        mtu=args.mtu or 1406,
+    )
+    try:
+        config = await session.connect()
+        if args.route_policy == "auto" and not route_allows(config, args.host):
+            raise RouteNotAllowed(
+                f"{args.host} is outside the gateway's split routes "
+                f"({describe_routes(config)}); packets would be discarded with no error"
+            )
+
+        driver = Driver(session)
+        driver.start()
+        stdio = StdioBridge()
+        try:
+            stream = await driver.connect(args.host, args.port, timeout=args.timeout)
+            await bridge(TunnelRemote(stream), stdio)
+        finally:
+            stdio.close()
+            await driver.aclose()
+    finally:
+        await session.aclose()
+        await logout(gateway, success.session_token)
+    return 0

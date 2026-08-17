@@ -9,8 +9,8 @@ from collections.abc import Sequence
 from pyac import __version__
 
 # Commands register themselves here as they land; see cli/__init__.py.
-# M3: ping, resolve.  M5: nc.
-_COMMAND_MODULES: tuple[str, ...] = ("cmd_probe", "cmd_up", "cmd_get")
+# Still to come: ping, resolve, info, diag.
+_COMMAND_MODULES: tuple[str, ...] = ("cmd_probe", "cmd_up", "cmd_get", "cmd_nc")
 
 
 def add_global_flags(parser: argparse.ArgumentParser, *, suppress: bool = False) -> None:
