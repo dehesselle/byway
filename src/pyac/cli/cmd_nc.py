@@ -213,6 +213,8 @@ def run(args: argparse.Namespace) -> int:
     if not args.via:
         try:
             apply_profile(args)
+        except KeyboardInterrupt:
+            return 130
         except PyacError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 1

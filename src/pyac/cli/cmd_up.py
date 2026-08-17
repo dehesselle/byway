@@ -288,6 +288,8 @@ def run(args: argparse.Namespace) -> int:
     configure_logging(args.verbose)
     try:
         apply_profile(args)
+    except KeyboardInterrupt:
+        return 130
     except PyacError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
@@ -300,11 +302,14 @@ def run(args: argparse.Namespace) -> int:
         return 2
 
     gateway = parse_gateway(args.gateway, pin=args.pin, no_verify=args.no_verify)
-    credentials = Credentials(
-        username=args.user,
-        password=read_password(args.password_stdin, profile=args.profile, username=args.user),
-        group=args.group,
-    )
+    try:
+        credentials = Credentials(
+            username=args.user,
+            password=read_password(args.password_stdin, profile=args.profile, username=args.user),
+            group=args.group,
+        )
+    except KeyboardInterrupt:
+        return 130
     try:
         return asyncio.run(_run(args, gateway, credentials))
     except KeyboardInterrupt:
