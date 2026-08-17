@@ -20,12 +20,14 @@ from pyac.net.checksum import checksum, ones_complement_sum, pseudo_header_sum
 HEADER = struct.Struct("!HHIIBBHHH")
 MIN_HEADER_LEN = 20
 
-# The window field is 16 bits. Without window scaling this is a hard ceiling on
-# what may be advertised, and at a 100 ms RTT it caps one connection at roughly
-# 640 KB/s -- which is why window scaling is the first thing the hardening pass
-# adds. Never advertise more than this: claiming a window we cannot honour
-# invites the peer to overrun the receive buffer.
+# The window field is 16 bits. Never put more than this on the wire: claiming a
+# window we cannot honour invites the peer to overrun the receive buffer.
+# Anything larger is expressed through the window-scale option instead.
 MAX_WINDOW = 0xFFFF
+
+# RFC 7323 4.3: a shift above 14 must be clamped, never honoured, so the
+# advertisable window stays below 2**30 and sequence comparisons keep working.
+MAX_WINDOW_SCALE = 14
 
 SEQ_MASK = 0xFFFFFFFF
 _SEQ_SIGN = 0x80000000
@@ -187,8 +189,7 @@ def _parse_options(view: memoryview) -> tuple[int | None, int | None, bool]:
         if kind == OPT_MSS and length == 4:
             mss = int.from_bytes(view[index + 2 : index + 4], "big")
         elif kind == OPT_WINDOW_SCALE and length == 3:
-            # RFC 7323: a shift above 14 must be clamped, not honoured.
-            window_scale = min(view[index + 2], 14)
+            window_scale = min(view[index + 2], MAX_WINDOW_SCALE)
         elif kind == OPT_SACK_PERMITTED and length == 2:
             sack_permitted = True
 
@@ -209,11 +210,20 @@ def build_tcp(
     window: int,
     payload: bytes = b"",
     mss: int | None = None,
+    window_scale: int | None = None,
 ) -> bytes:
-    """Build a TCP segment, including its pseudo-header checksum."""
+    """Build a TCP segment, including its pseudo-header checksum.
+
+    ``mss`` and ``window_scale`` are only meaningful on a SYN; both are
+    negotiated once and never restated.
+    """
     options = b""
     if mss is not None:
-        options = struct.pack("!BBH", OPT_MSS, 4, mss)
+        options += struct.pack("!BBH", OPT_MSS, 4, mss)
+    if window_scale is not None:
+        # Led by a NOP so the pair lands on a 4-byte boundary, which is what
+        # every real stack emits and therefore what middleboxes expect.
+        options += struct.pack("!BBBB", OPT_NOP, OPT_WINDOW_SCALE, 3, window_scale)
     # Options must be padded to a 4-byte boundary with NOPs/EOL.
     if len(options) % 4:
         options += b"\x00" * (4 - len(options) % 4)

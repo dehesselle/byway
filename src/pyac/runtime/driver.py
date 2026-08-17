@@ -83,8 +83,9 @@ class TcpStream:
         """Read once. Returns ``b""`` at end of stream."""
         while True:
             self._driver.raise_if_failed(self)
-            data = self._driver.stack.tcp_recv(self._sid, max_bytes)
+            data = self._driver.stack.tcp_recv(self._sid, max_bytes, self._driver.now)
             if data:
+                self._driver.wake()  # a window update may be waiting to go out
                 return data
             if self.eof or self.finished.is_set():
                 return b""

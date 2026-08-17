@@ -11,8 +11,16 @@ import pytest
 
 from pyac.errors import ConnectionRefused, ConnectionReset, ConnectionTimeout
 from pyac.net.ipv4 import PROTO_TCP
-from pyac.net.tcb import State, Tcb, TcbConfig
-from pyac.net.tcp import DEFAULT_MSS, Flag, TcpSegment, parse_tcp, seq_add, verify_tcp_checksum
+from pyac.net.tcb import State, Tcb, TcbConfig, initial_window_scale
+from pyac.net.tcp import (
+    DEFAULT_MSS,
+    MAX_WINDOW_SCALE,
+    Flag,
+    TcpSegment,
+    parse_tcp,
+    seq_add,
+    verify_tcp_checksum,
+)
 
 LOCAL_IP = "172.29.29.5"
 REMOTE_IP = "10.221.188.32"
@@ -42,6 +50,10 @@ class Harness:
         self.now += milliseconds
         self.tcb.on_tick(self.now)
 
+    def let_ack_fire(self) -> None:
+        """Advance just past the delayed-ACK timer."""
+        self.advance(self.tcb.config.delayed_ack_ms)
+
     def sent(self) -> list[TcpSegment]:
         """Drain and parse everything the TCB wants to send."""
         segments = [parse_tcp(raw) for raw in self.tcb.pending_segments]
@@ -70,6 +82,7 @@ class Harness:
         payload: bytes = b"",
         window: int = 65535,
         mss: int | None = None,
+        window_scale: int | None = None,
     ) -> None:
         self.tcb.on_segment(
             TcpSegment(
@@ -81,13 +94,21 @@ class Harness:
                 window=window,
                 payload=payload,
                 mss=mss,
+                window_scale=window_scale,
             ),
             self.now,
         )
 
     # --- shortcuts -----------------------------------------------------
 
-    def establish(self, *, peer_mss: int | None = 1460, rtt_ms: int = 0) -> None:
+    def establish(
+        self,
+        *,
+        peer_mss: int | None = 1460,
+        rtt_ms: int = 0,
+        window: int = 65535,
+        window_scale: int | None = None,
+    ) -> None:
         """Complete a handshake, optionally taking ``rtt_ms`` to do it.
 
         The handshake itself yields the connection's first RTT sample, so
@@ -97,7 +118,14 @@ class Harness:
         self.tcb.connect(self.now)
         self.sent()
         self.now += rtt_ms
-        self.peer(seq=PEER_ISN, ack=seq_add(ISN, 1), flags=Flag.SYN | Flag.ACK, mss=peer_mss)
+        self.peer(
+            seq=PEER_ISN,
+            ack=seq_add(ISN, 1),
+            flags=Flag.SYN | Flag.ACK,
+            mss=peer_mss,
+            window=window,
+            window_scale=window_scale,
+        )
         self.sent()
         self.events()
         assert self.tcb.state is State.ESTABLISHED
@@ -229,7 +257,8 @@ def test_send_respects_the_peer_window(h: Harness) -> None:
     segments = h.sent()
 
     assert sum(len(s.payload) for s in segments) == 100
-    assert len(h.tcb.send_buffer) == 400  # the rest stays queued
+    assert h.tcb.unsent == 400  # the rest stays queued
+    assert len(h.tcb.send_buffer) == 500  # and all of it is retained for resend
 
 
 def test_window_reopening_releases_queued_data(h: Harness) -> None:
@@ -254,6 +283,7 @@ def test_send_is_bounded_by_the_transmit_buffer(h: Harness) -> None:
 def test_receiving_data_buffers_it_and_acks(h: Harness) -> None:
     h.establish()
     h.peer(seq=seq_add(PEER_ISN, 1), ack=seq_add(ISN, 1), flags=Flag.ACK, payload=b"hello")
+    h.let_ack_fire()
 
     ack = h.one()
     assert ack.ack == seq_add(PEER_ISN, 6)
@@ -271,8 +301,8 @@ def test_recv_takes_only_what_is_asked_for(h: Harness) -> None:
     assert h.tcb.recv(100) == b""
 
 
-def test_out_of_order_segment_is_dropped_and_reacked(h: Harness) -> None:
-    """The thin slice has no reassembly queue; the ACK re-asks for rcv_nxt."""
+def test_out_of_order_segment_is_held_and_reacked(h: Harness) -> None:
+    """Held, not delivered: the ACK keeps asking for the byte before the gap."""
     h.establish()
     h.peer(seq=seq_add(PEER_ISN, 100), ack=seq_add(ISN, 1), flags=Flag.ACK, payload=b"future")
 
@@ -287,10 +317,13 @@ def test_advertised_window_shrinks_as_the_buffer_fills(h: Harness) -> None:
     h.establish()
 
     h.peer(seq=seq_add(PEER_ISN, 1), ack=seq_add(ISN, 1), flags=Flag.ACK, payload=b"a" * 400)
+    h.let_ack_fire()
     assert h.one().window == 600
 
-    h.tcb.recv(400)
+    h.tcb.recv(400, h.now)
+    h.sent()
     h.peer(seq=seq_add(PEER_ISN, 401), ack=seq_add(ISN, 1), flags=Flag.ACK, payload=b"b" * 10)
+    h.let_ack_fire()
     assert h.one().window == 990
 
 
@@ -550,3 +583,579 @@ def test_acknowledging_unsent_data_is_ignored(h: Harness) -> None:
 
 def test_protocol_number_is_tcp() -> None:
     assert PROTO_TCP == 6
+
+
+# --- window scaling --------------------------------------------------------
+
+
+def test_the_smallest_sufficient_shift_is_chosen() -> None:
+    """Every extra shift coarsens the window; take only what is needed."""
+    assert initial_window_scale(64 * 1024) == 1
+    assert initial_window_scale(65535) == 0
+    assert initial_window_scale(256 * 1024) == 3
+    assert initial_window_scale(1 << 40) == MAX_WINDOW_SCALE
+
+
+def test_syn_offers_a_window_scale_matching_the_buffer(h: Harness) -> None:
+    h = Harness(rx_buffer=256 * 1024)
+    h.tcb.connect(h.now)
+    syn = h.one()
+
+    assert syn.window_scale == 3
+    # The SYN's own window is unscaled, so it can say no more than 65535.
+    assert syn.window == 0xFFFF
+
+
+def test_scaling_is_only_used_if_the_peer_agrees(h: Harness) -> None:
+    """RFC 7323: one side offering is not enough, and guessing would overrun."""
+    h = Harness(rx_buffer=256 * 1024)
+    h.establish(window_scale=None)
+
+    assert h.tcb.rcv_wscale == 0
+    assert h.tcb.snd_wscale == 0
+    assert h.tcb.advertised_window == 0xFFFF  # capped, not scaled
+
+
+def test_agreed_scaling_advertises_the_whole_buffer(h: Harness) -> None:
+    h = Harness(rx_buffer=256 * 1024)
+    h.establish(window_scale=0)
+
+    assert h.tcb.rcv_wscale == 3
+    assert h.tcb.advertised_window == 256 * 1024 >> 3
+    assert h.tcb.advertised_window << h.tcb.rcv_wscale == 256 * 1024
+
+
+def test_the_peers_window_is_scaled_by_its_shift(h: Harness) -> None:
+    h.establish(window_scale=7, window=100)
+    # The SYN-ACK's own window is unscaled...
+    assert h.tcb.snd_wnd == 100
+
+    # ...but everything after it is not.
+    h.peer(seq=seq_add(PEER_ISN, 1), ack=seq_add(ISN, 1), flags=Flag.ACK, window=1000)
+    assert h.tcb.snd_wnd == 1000 << 7
+
+
+def test_scaling_can_be_switched_off_entirely() -> None:
+    h = Harness(window_scaling=False)
+    h.tcb.connect(h.now)
+    assert h.one().window_scale is None
+
+
+def test_a_reordered_segment_cannot_reinstate_a_stale_window(h: Harness) -> None:
+    """RFC 9293 3.10.7.4. Without the guard the connection stalls or overruns."""
+    h.establish(window=1000)
+    h.peer(seq=seq_add(PEER_ISN, 5), ack=seq_add(ISN, 1), flags=Flag.ACK, window=8000)
+    assert h.tcb.snd_wnd == 8000
+
+    # An older segment arriving late must not drag the window back down.
+    h.peer(seq=seq_add(PEER_ISN, 1), ack=seq_add(ISN, 1), flags=Flag.ACK, window=10)
+    assert h.tcb.snd_wnd == 8000
+
+
+# --- delayed ACK -----------------------------------------------------------
+
+
+def test_a_single_segment_is_acked_on_the_timer(h: Harness) -> None:
+    h.establish()
+    h.peer(seq=seq_add(PEER_ISN, 1), ack=seq_add(ISN, 1), flags=Flag.ACK, payload=b"one")
+
+    assert h.sent() == []
+    h.advance(h.tcb.config.delayed_ack_ms - 1)
+    assert h.sent() == []
+    h.advance(1)
+    assert h.one().ack == seq_add(PEER_ISN, 4)
+
+
+def test_the_second_segment_forces_an_immediate_ack(h: Harness) -> None:
+    """RFC 5681: never leave more than two segments unacknowledged."""
+    h.establish()
+    h.peer(seq=seq_add(PEER_ISN, 1), ack=seq_add(ISN, 1), flags=Flag.ACK, payload=b"one")
+    h.sent()
+    h.peer(seq=seq_add(PEER_ISN, 4), ack=seq_add(ISN, 1), flags=Flag.ACK, payload=b"two")
+
+    assert h.one().ack == seq_add(PEER_ISN, 7)
+    # ...and the timer is spent, so nothing fires afterwards.
+    h.let_ack_fire()
+    assert h.sent() == []
+
+
+def test_outbound_data_carries_the_delayed_ack(h: Harness) -> None:
+    """A reply is an acknowledgement; sending a bare one too is pure waste."""
+    h.establish()
+    h.peer(seq=seq_add(PEER_ISN, 1), ack=seq_add(ISN, 1), flags=Flag.ACK, payload=b"request")
+    assert h.sent() == []
+
+    h.tcb.send(b"response", h.now)
+    reply = h.one()
+    assert reply.payload == b"response"
+    assert reply.ack == seq_add(PEER_ISN, 8)
+
+    h.let_ack_fire()
+    assert h.sent() == []
+
+
+def test_an_out_of_order_segment_is_acked_at_once(h: Harness) -> None:
+    """Duplicate ACKs only drive the peer's fast retransmit if they are prompt."""
+    h.establish()
+    h.peer(seq=seq_add(PEER_ISN, 100), ack=seq_add(ISN, 1), flags=Flag.ACK, payload=b"gap")
+
+    assert h.one().ack == seq_add(PEER_ISN, 1)
+
+
+def test_a_fin_is_acked_at_once(h: Harness) -> None:
+    h.establish()
+    h.peer(seq=seq_add(PEER_ISN, 1), ack=seq_add(ISN, 1), flags=Flag.FIN | Flag.ACK)
+
+    assert h.one().ack == seq_add(PEER_ISN, 2)
+
+
+def test_a_filled_receive_buffer_is_acked_at_once() -> None:
+    """The peer must learn the window shut before it sends into the void."""
+    h = Harness(rx_buffer=100)
+    h.establish()
+    h.peer(seq=seq_add(PEER_ISN, 1), ack=seq_add(ISN, 1), flags=Flag.ACK, payload=b"c" * 100)
+
+    assert h.one().window == 0
+
+
+# --- out-of-order reassembly -----------------------------------------------
+
+
+def test_a_gap_is_filled_and_delivered_in_order(h: Harness) -> None:
+    h.establish()
+    base = seq_add(PEER_ISN, 1)
+    h.peer(seq=seq_add(base, 5), ack=seq_add(ISN, 1), flags=Flag.ACK, payload=b"world")
+    h.sent()
+    assert h.tcb.recv(100) == b""
+
+    h.peer(seq=base, ack=seq_add(ISN, 1), flags=Flag.ACK, payload=b"hello")
+
+    assert h.tcb.recv(100) == b"helloworld"
+    assert h.one().ack == seq_add(base, 10)
+
+
+def test_several_gaps_are_reassembled(h: Harness) -> None:
+    h.establish()
+    base = seq_add(PEER_ISN, 1)
+    for offset in (9, 3, 6):
+        h.peer(seq=seq_add(base, offset), ack=seq_add(ISN, 1), flags=Flag.ACK, payload=b"xyz")
+    h.sent()
+    assert h.tcb.recv(100) == b""
+
+    h.peer(seq=base, ack=seq_add(ISN, 1), flags=Flag.ACK, payload=b"abc")
+    assert h.tcb.recv(100) == b"abcxyzxyzxyz"
+
+
+def test_an_overlapping_retransmission_is_trimmed(h: Harness) -> None:
+    """A peer that resends more than we are missing must not duplicate bytes."""
+    h.establish()
+    base = seq_add(PEER_ISN, 1)
+    h.peer(seq=base, ack=seq_add(ISN, 1), flags=Flag.ACK, payload=b"abcdef")
+    h.sent()
+
+    h.peer(seq=base, ack=seq_add(ISN, 1), flags=Flag.ACK, payload=b"abcdefghi")
+    assert h.tcb.recv(100) == b"abcdefghi"
+
+
+def test_a_wholly_duplicate_segment_is_acked_but_not_delivered(h: Harness) -> None:
+    h.establish()
+    base = seq_add(PEER_ISN, 1)
+    h.peer(seq=base, ack=seq_add(ISN, 1), flags=Flag.ACK, payload=b"once")
+    h.let_ack_fire()
+    h.sent()
+
+    h.peer(seq=base, ack=seq_add(ISN, 1), flags=Flag.ACK, payload=b"once")
+
+    assert h.tcb.recv(100) == b"once"
+    # Immediately, not on the timer: it resent because it thinks we went quiet.
+    assert h.one().ack == seq_add(base, 4)
+
+
+def test_held_bytes_count_against_the_advertised_window() -> None:
+    """Otherwise a peer could park unlimited memory behind a single gap."""
+    h = Harness(rx_buffer=1000)
+    h.establish()
+    h.peer(seq=seq_add(PEER_ISN, 501), ack=seq_add(ISN, 1), flags=Flag.ACK, payload=b"h" * 400)
+
+    assert h.one().window == 600
+
+
+def test_the_reassembly_queue_is_bounded() -> None:
+    """Past the bound we fall back to retransmission rather than pin memory."""
+    h = Harness(max_ooo_segments=4)
+    h.establish()
+    base = seq_add(PEER_ISN, 1)
+    for index in range(1, 12):
+        offset = index * 10
+        h.peer(seq=seq_add(base, offset), ack=seq_add(ISN, 1), flags=Flag.ACK, payload=b"y" * 10)
+    h.sent()
+
+    assert h.tcb._ooo_bytes == 40
+
+    # The gap still fills, and only the segments we kept are delivered.
+    h.peer(seq=base, ack=seq_add(ISN, 1), flags=Flag.ACK, payload=b"x" * 10)
+    assert h.tcb.recv(1000) == b"x" * 10 + b"y" * 40
+
+
+def test_a_fin_behind_a_gap_waits_for_the_gap(h: Harness) -> None:
+    """Acting on the FIN early would silently truncate the stream."""
+    h.establish()
+    base = seq_add(PEER_ISN, 1)
+    h.peer(seq=seq_add(base, 4), ack=seq_add(ISN, 1), flags=Flag.FIN | Flag.ACK, payload=b"tail")
+    h.sent()
+
+    assert h.tcb.state is State.ESTABLISHED
+    assert not h.tcb.peer_fin_seen
+
+    h.peer(seq=base, ack=seq_add(ISN, 1), flags=Flag.ACK, payload=b"head")
+
+    assert h.tcb.state is State.CLOSE_WAIT
+    assert h.tcb.recv(100) == b"headtail"
+    assert h.one().ack == seq_add(base, 9)
+
+
+# --- congestion control ----------------------------------------------------
+
+
+def test_the_first_burst_is_limited_to_the_initial_window(h: Harness) -> None:
+    """IW10 (RFC 6928): ten segments before the first ACK, and no more."""
+    h.establish(peer_mss=536)
+    assert h.tcb.cwnd == 10 * 536
+
+    h.tcb.send(b"z" * 20_000, h.now)
+    segments = h.sent()
+
+    assert len(segments) == 10
+    assert sum(len(s.payload) for s in segments) == 5360
+
+
+def test_slow_start_opens_the_window_by_one_segment_per_ack(h: Harness) -> None:
+    h.establish(peer_mss=536)
+    h.tcb.send(b"z" * 20_000, h.now)
+    h.sent()
+
+    h.peer(seq=seq_add(PEER_ISN, 1), ack=seq_add(ISN, 537), flags=Flag.ACK)
+    assert h.tcb.cwnd == 10 * 536 + 536
+
+
+def test_congestion_avoidance_opens_it_by_one_segment_per_round_trip(h: Harness) -> None:
+    h.establish(peer_mss=536)
+    h.tcb.send(b"z" * 20_000, h.now)
+    h.sent()
+    # Past the threshold, growth becomes linear rather than exponential.
+    h.tcb.ssthresh = 2000
+    h.tcb.cwnd = 5360
+
+    h.peer(seq=seq_add(PEER_ISN, 1), ack=seq_add(ISN, 537), flags=Flag.ACK)
+    assert h.tcb.cwnd == 5360 + 536 * 536 // 5360
+
+
+def test_three_duplicate_acks_retransmit_without_waiting_for_the_timer(h: Harness) -> None:
+    """The whole point of fast retransmit: recovery in an RTT, not an RTO."""
+    h = Harness(rto_initial_ms=100_000)
+    h.establish(peer_mss=536)
+    h.tcb.send(b"z" * 2144, h.now)
+    first = h.sent()[0]
+
+    for _ in range(3):
+        h.peer(seq=seq_add(PEER_ISN, 1), ack=seq_add(ISN, 1), flags=Flag.ACK)
+
+    resent = h.one()
+    assert resent.seq == first.seq
+    assert resent.payload == first.payload
+    assert h.tcb.in_recovery
+
+
+def test_two_duplicate_acks_are_not_enough(h: Harness) -> None:
+    """Two can be plain reordering, and retransmitting on them would thrash."""
+    h = Harness(rto_initial_ms=100_000)
+    h.establish(peer_mss=536)
+    h.tcb.send(b"z" * 2144, h.now)
+    h.sent()
+
+    for _ in range(2):
+        h.peer(seq=seq_add(PEER_ISN, 1), ack=seq_add(ISN, 1), flags=Flag.ACK)
+
+    assert h.sent() == []
+    assert not h.tcb.in_recovery
+
+
+def test_entering_recovery_halves_the_threshold(h: Harness) -> None:
+    h = Harness(rto_initial_ms=100_000)
+    h.establish(peer_mss=536)
+    h.tcb.send(b"z" * 2144, h.now)
+    h.sent()
+
+    for _ in range(3):
+        h.peer(seq=seq_add(PEER_ISN, 1), ack=seq_add(ISN, 1), flags=Flag.ACK)
+
+    assert h.tcb.ssthresh == 2144 // 2
+    assert h.tcb.cwnd == 2144 // 2 + 3 * 536  # inflated by what has left the net
+
+
+def test_further_duplicates_inflate_the_window(h: Harness) -> None:
+    h = Harness(rto_initial_ms=100_000)
+    h.establish(peer_mss=536)
+    h.tcb.send(b"z" * 2144, h.now)
+    h.sent()
+
+    for _ in range(3):
+        h.peer(seq=seq_add(PEER_ISN, 1), ack=seq_add(ISN, 1), flags=Flag.ACK)
+    inflated = h.tcb.cwnd
+    h.peer(seq=seq_add(PEER_ISN, 1), ack=seq_add(ISN, 1), flags=Flag.ACK)
+
+    assert h.tcb.cwnd == inflated + 536
+
+
+def test_a_full_ack_ends_recovery_at_the_threshold(h: Harness) -> None:
+    h = Harness(rto_initial_ms=100_000)
+    h.establish(peer_mss=536)
+    h.tcb.send(b"z" * 2144, h.now)
+    h.sent()
+    for _ in range(3):
+        h.peer(seq=seq_add(PEER_ISN, 1), ack=seq_add(ISN, 1), flags=Flag.ACK)
+    h.sent()
+
+    h.peer(seq=seq_add(PEER_ISN, 1), ack=seq_add(ISN, 2145), flags=Flag.ACK)
+
+    assert not h.tcb.in_recovery
+    assert h.tcb.cwnd == h.tcb.ssthresh
+
+
+def test_a_partial_ack_retransmits_the_next_hole_immediately(h: Harness) -> None:
+    """NewReno's reason to exist: a second loss must not cost another RTO."""
+    h = Harness(rto_initial_ms=100_000)
+    h.establish(peer_mss=536)
+    h.tcb.send(b"z" * 2144, h.now)
+    sent = h.sent()
+    for _ in range(3):
+        h.peer(seq=seq_add(PEER_ISN, 1), ack=seq_add(ISN, 1), flags=Flag.ACK)
+    h.sent()
+
+    # Only the first hole was filled; the rest of the window is still missing.
+    h.peer(seq=seq_add(PEER_ISN, 1), ack=seq_add(ISN, 537), flags=Flag.ACK)
+
+    assert h.tcb.in_recovery
+    assert h.one().seq == sent[1].seq
+
+
+def test_a_timeout_collapses_the_window_to_one_segment(h: Harness) -> None:
+    """RFC 5681: a timeout means the pipe drained, so start over."""
+    h = Harness(rto_initial_ms=1000)
+    h.establish(peer_mss=536)
+    h.tcb.send(b"z" * 2144, h.now)
+    h.sent()
+
+    h.advance(1000)
+
+    assert h.tcb.cwnd == 536
+    assert h.tcb.ssthresh == 2144 // 2
+    assert not h.tcb.in_recovery
+
+
+def test_a_timeout_resumes_the_window_rather_than_one_segment_per_rto() -> None:
+    """The bug this guards against still completes transfers -- eventually.
+
+    Retransmitting only the leftmost segment and then waiting for the next
+    timeout costs a full RTO per segment, so a lossy 30 KB request takes
+    minutes instead of milliseconds. Recovery has to resume from the left edge
+    and then keep going as slow start reopens the window.
+    """
+    h = Harness(rto_initial_ms=1000, rto_min_ms=1)
+    h.establish(peer_mss=536, rtt_ms=10)
+    h.tcb.send(b"z" * 5360, h.now)  # ten segments, all of which go missing
+    h.sent()
+
+    h.advance(1000)
+    assert len(h.sent()) == 1  # collapsed to one segment, as RFC 5681 requires
+
+    # The acknowledgement of that one segment must put the next ones on the
+    # wire immediately, without waiting out another timeout.
+    h.peer(seq=seq_add(PEER_ISN, 1), ack=seq_add(ISN, 537), flags=Flag.ACK)
+    assert len(h.sent()) == 2
+
+    h.peer(seq=seq_add(PEER_ISN, 1), ack=seq_add(ISN, 1609), flags=Flag.ACK)
+    assert len(h.sent()) == 3
+
+
+def test_an_ack_for_data_sent_before_a_timeout_is_still_accepted() -> None:
+    """A timeout rewinds snd_nxt, so validating an ACK against it would throw
+    away a perfectly good delayed acknowledgement and stall the transfer."""
+    h = Harness(rto_initial_ms=1000)
+    h.establish(peer_mss=536)
+    h.tcb.send(b"z" * 2144, h.now)
+    h.sent()
+
+    h.advance(1000)
+    h.sent()
+    assert h.tcb.snd_nxt == seq_add(ISN, 537)  # rewound to one segment out
+
+    # The original burst did arrive after all; its acknowledgement was slow.
+    h.peer(seq=seq_add(PEER_ISN, 1), ack=seq_add(ISN, 2145), flags=Flag.ACK)
+
+    assert h.tcb.snd_una == seq_add(ISN, 2145)
+    assert h.tcb.state is State.ESTABLISHED
+    assert h.tcb.unsent == 0
+
+
+def test_an_unacknowledged_fin_is_retransmitted() -> None:
+    """A lost FIN otherwise leaves both sides waiting on each other forever."""
+    h = Harness(rto_initial_ms=1000)
+    h.establish()
+    h.tcb.close(h.now)
+    first = h.one()
+    assert first.flags & Flag.FIN
+
+    h.advance(1000)
+    again = h.one()
+
+    assert again.flags & Flag.FIN
+    assert again.seq == first.seq
+
+
+def test_data_and_fin_are_both_replayed_after_a_timeout() -> None:
+    h = Harness(rto_initial_ms=1000)
+    h.establish(peer_mss=536)
+    h.tcb.send(b"z" * 400, h.now)
+    h.tcb.close(h.now)
+    first = h.sent()
+    assert [s.flags & Flag.FIN == Flag.FIN for s in first] == [False, True]
+
+    h.advance(1000)
+    replayed = h.sent()
+
+    # The 400 bytes fit in the one segment the collapsed window allows, so the
+    # FIN follows them in the same pass, exactly as it did the first time.
+    assert [s.seq for s in replayed] == [s.seq for s in first]
+    assert replayed[0].payload == b"z" * 400
+    assert replayed[1].flags & Flag.FIN
+
+
+def test_a_window_full_of_data_does_not_trigger_fast_retransmit(h: Harness) -> None:
+    """An ACK that advances, or carries data, is not a duplicate."""
+    h = Harness(rto_initial_ms=100_000)
+    h.establish(peer_mss=536)
+    h.tcb.send(b"z" * 2144, h.now)
+    h.sent()
+
+    for index in range(3):
+        h.peer(
+            seq=seq_add(PEER_ISN, 1 + index),
+            ack=seq_add(ISN, 1),
+            flags=Flag.ACK,
+            payload=b"d",
+        )
+
+    assert not h.tcb.in_recovery
+    assert h.tcb.dup_acks == 0
+
+
+# --- zero window and persist ------------------------------------------------
+
+
+def test_a_closed_window_starts_the_persist_timer() -> None:
+    h = Harness(rto_min_ms=250)
+    h.establish(window=0)
+    h.tcb.send(b"blocked", h.now)
+
+    assert h.sent() == []
+    assert h.tcb.persist_deadline == 250
+
+
+def test_the_persist_probe_sends_one_byte() -> None:
+    h = Harness(rto_min_ms=250)
+    h.establish(window=0)
+    h.tcb.send(b"blocked", h.now)
+    h.sent()
+
+    h.advance(250)
+    probe = h.one()
+
+    assert probe.payload == b"b"
+    assert probe.seq == seq_add(ISN, 1)
+
+
+def test_the_probe_repeats_the_same_byte_with_backoff() -> None:
+    """A byte sent past a closed window is discarded, so a fresh one would be
+    stranded; the probe has to keep offering the same one."""
+    h = Harness(rto_min_ms=250)
+    h.establish(window=0)
+    h.tcb.send(b"blocked", h.now)
+    h.sent()
+
+    h.advance(250)
+    assert h.one().payload == b"b"
+    h.advance(499)
+    assert h.sent() == []
+    h.advance(1)
+    assert h.one().payload == b"b"
+
+
+def test_a_reopened_window_cancels_persist_and_resends() -> None:
+    h = Harness(rto_min_ms=250)
+    h.establish(window=0)
+    h.tcb.send(b"blocked", h.now)
+    h.advance(250)
+    h.sent()
+
+    h.peer(seq=seq_add(PEER_ISN, 1), ack=seq_add(ISN, 1), flags=Flag.ACK, window=1000)
+
+    assert h.tcb.persist_deadline is None
+    # The probe byte was dropped by the peer, so it leads the rest of the data.
+    assert b"".join(s.payload for s in h.sent()) == b"blocked"
+
+
+def test_a_peer_that_never_answers_probes_eventually_fails() -> None:
+    """A connection hung with no error is worse than one that reports why."""
+    h = Harness(rto_min_ms=250, max_retransmits=3)
+    h.establish(window=0)
+    h.tcb.send(b"blocked", h.now)
+    h.sent()
+
+    probes = 0
+    while h.tcb.persist_deadline is not None:
+        h.advance(h.tcb.persist_deadline - h.now)
+        probes += len(h.sent())
+
+    assert probes == 3  # max_retransmits, then it gives up
+    assert h.tcb.state is State.CLOSED
+    assert isinstance(h.tcb.error, ConnectionTimeout)
+
+
+def test_reading_reopens_a_closed_window_immediately() -> None:
+    """A peer in persist would otherwise wait out a whole probe interval."""
+    h = Harness(rx_buffer=100)
+    h.establish()
+    h.peer(seq=seq_add(PEER_ISN, 1), ack=seq_add(ISN, 1), flags=Flag.ACK, payload=b"c" * 100)
+    assert h.one().window == 0
+
+    h.tcb.recv(100, h.now)
+
+    assert h.one().window == 100
+
+
+# --- transmit accounting ----------------------------------------------------
+
+
+def test_unacknowledged_bytes_count_against_the_transmit_buffer() -> None:
+    """They are still held for retransmission, so ignoring them bounds nothing."""
+    h = Harness(tx_buffer=1000)
+    h.establish(peer_mss=536)
+
+    assert h.tcb.send(b"z" * 1000, h.now) == 1000
+    h.sent()
+    assert h.tcb.tx_space == 0  # all of it is in flight, none of it is free
+    assert h.tcb.send(b"more", h.now) == 0
+
+
+def test_acknowledgement_reports_the_socket_writable_again() -> None:
+    h = Harness(tx_buffer=1000)
+    h.establish(peer_mss=536)
+    h.tcb.send(b"z" * 1200, h.now)
+    h.sent()
+    h.events()
+
+    h.peer(seq=seq_add(PEER_ISN, 1), ack=seq_add(ISN, 601), flags=Flag.ACK)
+
+    assert "writable" in h.event_names()
+    assert h.tcb.tx_space == 600

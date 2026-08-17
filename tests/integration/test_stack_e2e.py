@@ -14,6 +14,8 @@ import pytest_asyncio
 
 from pyac.errors import ConnectionRefused, ConnectionTimeout
 from pyac.net.ipv4 import parse_ipv4
+from pyac.net.stack import StackConfig
+from pyac.net.tcb import TcbConfig
 from pyac.net.tcp import Flag, parse_tcp
 from pyac.runtime.driver import Driver
 from tests.vnet import TcpPeer, VirtualLink
@@ -180,20 +182,29 @@ async def test_concurrent_connections_are_demultiplexed() -> None:
 
 
 async def test_a_request_completes_despite_packet_loss() -> None:
-    """Retransmission must carry the transfer through a lossy link."""
+    """Retransmission must carry the transfer through a lossy link.
+
+    The request is many segments long on purpose: losing one segment out of a
+    single-segment request only exercises the RTO, whereas losing one out of a
+    window is what fast retransmit and NewReno recovery exist for.
+    """
     peer = TcpPeer(ip=SERVER_IP, port=80, handler=http_handler(b"survived"))
     link = VirtualLink(peer, address=CLIENT_IP, loss=0.2, seed=7)
     driver = Driver(link)
     driver.start()
     try:
         stream = await driver.connect(SERVER_IP, 80, timeout=20)
-        await stream.write(b"GET / HTTP/1.1\r\n\r\n")
+        await stream.write(b"GET / HTTP/1.1\r\nX-Pad: " + b"L" * 30_000 + b"\r\n\r\n")
         response = await stream.read_all()
     finally:
         await driver.aclose()
 
     assert response.endswith(b"survived")
     assert link.dropped_count > 0, "the test did not actually drop anything"
+
+    (connection,) = peer.connections.values()
+    # Byte-exact despite the losses, retransmissions, and reordering they cause.
+    assert bytes(connection.received).count(b"L") == 30_000
 
 
 async def test_duplicate_packets_do_not_corrupt_the_stream() -> None:
@@ -212,6 +223,86 @@ async def test_duplicate_packets_do_not_corrupt_the_stream() -> None:
     (connection,) = peer.connections.values()
     # A duplicated request must not be delivered to the application twice.
     assert bytes(connection.received).count(b"GET /") == 1
+
+
+async def test_reordered_packets_are_reassembled() -> None:
+    """Reordering must cost nothing but a duplicate ACK, not an RTO each time."""
+    body = bytes(range(256)) * 200  # 50 KB, so there is plenty to reorder
+    peer = TcpPeer(ip=SERVER_IP, port=80, handler=http_handler(body))
+    link = VirtualLink(peer, address=CLIENT_IP, reorder=0.3, seed=11)
+    driver = Driver(link)
+    driver.start()
+    try:
+        stream = await driver.connect(SERVER_IP, 80, timeout=20)
+        await stream.write(b"GET /shuffled HTTP/1.1\r\n\r\n")
+        response = await stream.read_all()
+    finally:
+        await driver.aclose()
+
+    assert response.split(b"\r\n\r\n", 1)[1] == body
+    assert link.reordered_count > 0, "the test did not actually reorder anything"
+
+
+async def test_a_transfer_does_not_produce_a_packet_storm() -> None:
+    """Correctness assertions pass happily through a retransmission storm.
+
+    Counting packets is what catches one, and a storm is the difference
+    between a stack that works and a stack that is usable.
+    """
+    body = b"s" * 100_000
+    peer = TcpPeer(ip=SERVER_IP, port=80, handler=http_handler(body))
+    link, driver = make(peer)
+    try:
+        stream = await driver.connect(SERVER_IP, 80)
+        await stream.write(b"GET /bulk HTTP/1.1\r\n\r\n")
+        response = await stream.read_all()
+    finally:
+        await driver.aclose()
+
+    assert response.endswith(body)
+    # ~72 inbound segments at the peer's 1400-byte MSS. Acknowledging every
+    # second one puts the floor near 36; anything approaching one ACK per
+    # segment, or any retransmission at all, blows past this.
+    assert link.sent_count < 60, f"{link.sent_count} packets to carry one response"
+
+
+async def test_a_slow_reader_closes_the_window_and_recovers() -> None:
+    """Flow control end to end: the buffer fills, the window shuts, and the
+    transfer resumes byte-exact once the application catches up."""
+    body = b"".join(bytes([index % 251]) * 1000 for index in range(60))  # 60 KB
+    peer = TcpPeer(ip=SERVER_IP, port=80, handler=http_handler(body))
+
+    windows: list[int] = []
+    link = VirtualLink(
+        peer,
+        address=CLIENT_IP,
+        on_send=lambda packet: windows.append(parse_tcp(parse_ipv4(packet)[1]).window),
+    )
+    driver = Driver(
+        link,
+        # A receive buffer far smaller than the response, so the window must
+        # shut before the application has read it all.
+        stack_config=StackConfig(
+            local_ip=CLIENT_IP,
+            mtu=link.config.mtu,
+            tcb=TcbConfig(mss=link.config.mtu - 40, rx_buffer=8 * 1024),
+        ),
+    )
+    driver.start()
+    try:
+        stream = await driver.connect(SERVER_IP, 80, timeout=20)
+        await stream.write(b"GET /slow HTTP/1.1\r\n\r\n")
+        chunks: list[bytes] = []
+        while True:
+            chunk = await stream.read(2048)
+            if not chunk:
+                break
+            chunks.append(chunk)
+    finally:
+        await driver.aclose()
+
+    assert b"".join(chunks).split(b"\r\n\r\n", 1)[1] == body
+    assert 0 in windows, "the window never actually shut, so nothing was proven"
 
 
 async def test_tunnel_loss_fails_open_streams() -> None:

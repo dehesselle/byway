@@ -190,9 +190,15 @@ class PyStack:
         self._harvest(sid, tcb)
         return accepted
 
-    def tcp_recv(self, sid: SocketId, max_bytes: int) -> bytes:
+    def tcp_recv(self, sid: SocketId, max_bytes: int, now: int = 0) -> bytes:
         tcb = self._tcbs.get(sid)
-        return tcb.recv(max_bytes) if tcb is not None else b""
+        if tcb is None:
+            return b""
+        data = tcb.recv(max_bytes, now)
+        # Reading is what reopens the receive window, and a reopened window is
+        # announced with an ACK -- so this call can put a segment on the wire.
+        self._harvest(sid, tcb)
+        return data
 
     def tcp_tx_space(self, sid: SocketId) -> int:
         tcb = self._tcbs.get(sid)

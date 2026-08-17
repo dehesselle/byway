@@ -31,6 +31,7 @@ class VirtualLink:
         mtu: int = 1383,
         loss: float = 0.0,
         duplicate: float = 0.0,
+        reorder: float = 0.0,
         seed: int = 0,
         on_send: Callable[[bytes], None] | None = None,
     ) -> None:
@@ -43,11 +44,14 @@ class VirtualLink:
 
         self.loss = loss
         self.duplicate = duplicate
+        self.reorder = reorder
         self._random = random.Random(seed)
         self._on_send = on_send
+        self._held: bytes | None = None
 
         self.sent_count = 0
         self.dropped_count = 0
+        self.reordered_count = 0
 
     # --- IpLink ------------------------------------------------------------
 
@@ -90,12 +94,36 @@ class VirtualLink:
         except ProtocolParseError:
             return  # a corrupt packet is dropped, exactly as a real peer would
 
-        self._inbound.extend(replies)
-        if self._inbound:
+        for reply in replies:
+            self._arrive(reply)
+        if self._inbound or self._held is not None:
             self._wake.set()
+
+    def _arrive(self, packet: bytes) -> None:
+        """Queue one inbound packet, optionally letting a later one overtake it.
+
+        Reordering is applied on the peer -> client direction because that is
+        the one that reaches the stack's reassembly queue. Holding a single
+        packet back is enough: it produces a real gap followed by a real fill,
+        which is the case that either reassembles or costs an RTO.
+        """
+        if self.reorder and self._held is None and self._random.random() < self.reorder:
+            self._held = packet
+            self.reordered_count += 1
+            return
+
+        self._inbound.append(packet)
+        if self._held is not None:
+            self._inbound.append(self._held)
+            self._held = None
 
     def take_inbound(self) -> list[bytes]:
         packets = self._inbound
+        if self._held is not None:
+            # Release it rather than carry it: a packet held forever is loss,
+            # and loss in this direction stalls a peer that cannot retransmit.
+            packets.append(self._held)
+            self._held = None
         self._inbound = []
         self._wake.clear()
         return packets

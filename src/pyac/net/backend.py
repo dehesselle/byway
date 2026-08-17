@@ -66,12 +66,15 @@ class NetworkBackend(Protocol):
         """
         ...
 
-    def tcp_recv(self, sid: SocketId, max_bytes: int) -> bytes:
+    def tcp_recv(self, sid: SocketId, max_bytes: int, now: int = 0) -> bytes:
         """Take up to ``max_bytes`` from the receive buffer; ``b""`` if empty.
 
         Only call this once the consumer is genuinely ready to take the data.
         Draining eagerly into a queue would reopen the receive window without
         the data having gone anywhere, which silently disables flow control.
+
+        Takes ``now`` because reading is precisely what reopens that window,
+        and reopening it may need to be announced immediately.
         """
         ...
 

@@ -37,6 +37,12 @@ class Connection:
 
     snd_una: int = 0
     peer_window: int = 65535
+    peer_wscale: int = 0
+    """The client's window shift, learned from its SYN.
+
+    Ignoring it would silently cap the client's advertised window at 64 KiB and
+    quietly hide any window-scaling bug on its side.
+    """
     pending: bytearray = field(default_factory=bytearray)
     """Response bytes not yet sent, because the client's window is full.
 
@@ -56,6 +62,8 @@ class TcpPeer:
     isn: int = 900_000
     mss: int = 1400
     window: int = 65535
+    window_scale: int | None = 0
+    """Shift offered in the SYN-ACK; ``None`` refuses scaling entirely."""
 
     connections: dict[tuple[str, int], Connection] = field(default_factory=dict)
     resets: int = 0
@@ -86,6 +94,9 @@ class TcpPeer:
                 snd_nxt=self.isn,
                 rcv_nxt=seq_add(segment.seq, 1),
             )
+            connection.peer_window = segment.window  # a SYN's window is unscaled
+            if self.window_scale is not None and segment.window_scale is not None:
+                connection.peer_wscale = segment.window_scale
             self.connections[key] = connection
             out.append(
                 self._segment(
@@ -105,7 +116,7 @@ class TcpPeer:
                 connection.snd_una = segment.ack
             elif segment.ack != connection.snd_una:
                 connection.snd_una = segment.ack
-            connection.peer_window = segment.window
+            connection.peer_window = segment.window << connection.peer_wscale
 
         if segment.payload and segment.seq == connection.rcv_nxt:
             connection.received += segment.payload
@@ -171,6 +182,7 @@ class TcpPeer:
             window=self.window,
             payload=payload,
             mss=mss,
+            window_scale=self.window_scale if mss is not None else None,
         )
         return build_ipv4(
             source=self.ip,
