@@ -13,13 +13,14 @@ from __future__ import annotations
 
 import asyncio
 import ssl
+import time
 from pathlib import Path
 
 import pytest
 
 from pyac.cstp.link import ReconnectingLink
 from pyac.cstp.session import CstpSession
-from pyac.errors import NetworkError
+from pyac.errors import HandshakeRejected, NetworkError
 from pyac.runtime.driver import Driver
 from tests.fakegw import FakeGateway
 from tests.fakegw.server import DEFAULT_TUNNEL_HEADERS
@@ -228,6 +229,82 @@ async def test_giving_up_closes_the_link_with_a_reason(certs: Path) -> None:
 
             assert "could not re-establish" in link.close_reason
             assert opened == 4, "the first open plus exactly three attempts"
+        finally:
+            await link.aclose()
+
+
+async def test_a_rejected_cookie_stops_immediately(certs: Path) -> None:
+    """Observed against the real gateway: its idle timer does not merely drop
+    the connection, it destroys the session, so CONNECT returns 401 and will
+    keep doing so. Backing off through five of those wastes half a minute and
+    walks an account towards a lockout policy."""
+    async with FakeGateway([], certs_dir=certs, tunnel_headers=BASE_HEADERS) as gateway:
+        attempts = 0
+
+        async def open_session() -> CstpSession:
+            nonlocal attempts
+            attempts += 1
+            if attempts > 1:
+                raise HandshakeRejected(401, "session token rejected")
+            return await make_session(gateway)
+
+        link = ReconnectingLink(open_session, backoff_ms=(10,), max_attempts=5)
+        await link.start()
+        try:
+            gateway.send_disconnect()
+            await wait_until(link.closed.is_set)
+
+            assert attempts == 2, "a permanently rejected cookie was retried"
+            assert "cannot re-establish" in link.close_reason
+            assert isinstance(link.close_error, HandshakeRejected)
+        finally:
+            await link.aclose()
+
+
+async def test_giving_up_names_the_last_error(certs: Path) -> None:
+    """A close reason naming only the trigger -- "after DISCONNECT" -- leaves
+    out the part the user needs, which is why the retries failed."""
+    async with FakeGateway([], certs_dir=certs, tunnel_headers=BASE_HEADERS) as gateway:
+        opened = 0
+
+        async def open_session() -> CstpSession:
+            nonlocal opened
+            opened += 1
+            if opened > 1:
+                raise NetworkError("connection refused")
+            return await make_session(gateway)
+
+        link = ReconnectingLink(open_session, backoff_ms=(10,), max_attempts=2)
+        await link.start()
+        try:
+            gateway.send_disconnect()
+            await wait_until(link.closed.is_set)
+            assert "connection refused" in link.close_reason
+        finally:
+            await link.aclose()
+
+
+async def test_the_last_attempt_is_not_followed_by_a_backoff(certs: Path) -> None:
+    """Sleeping after the final try delays the error and buys nothing."""
+    async with FakeGateway([], certs_dir=certs, tunnel_headers=BASE_HEADERS) as gateway:
+        opened = 0
+
+        async def open_session() -> CstpSession:
+            nonlocal opened
+            opened += 1
+            if opened > 1:
+                raise NetworkError("still down")
+            return await make_session(gateway)
+
+        # One retry, then give up; the backoff is long enough that sleeping
+        # through it would blow the deadline below.
+        link = ReconnectingLink(open_session, backoff_ms=(30_000,), max_attempts=1)
+        await link.start()
+        try:
+            started = time.monotonic()
+            gateway.send_disconnect()
+            await wait_until(link.closed.is_set, timeout=5.0)
+            assert time.monotonic() - started < 2.0
         finally:
             await link.aclose()
 

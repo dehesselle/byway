@@ -13,9 +13,10 @@ import argparse
 
 import pytest
 
-from pyac.cli.cmd_up import print_liveness, print_tunnel
+from pyac.cli.cmd_up import print_close_advice, print_liveness, print_tunnel
 from pyac.cli.main import build_parser
 from pyac.cstp.config import TunnelConfig
+from pyac.errors import HandshakeRejected
 
 
 def config(**overrides: object) -> TunnelConfig:
@@ -101,3 +102,35 @@ def test_no_idle_timeout_and_no_keepalive_says_nothing_about_either(
     """Nothing to warn about, so no warning -- the point is accuracy, not noise."""
     print_liveness(config(idle_timeout=0), args_for(), None)
     assert "keepalive" not in capsys.readouterr().out
+
+
+# --- how the run ended -------------------------------------------------------
+
+
+def test_a_rejected_cookie_is_explained_and_answered(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The exact failure a real 30-minute idle session produces, turned into
+    the flag that prevents it."""
+    print_close_advice(config(), args_for(), HandshakeRejected(401, "session token rejected"))
+    text = capsys.readouterr().out
+    assert "rejected the session cookie" in text
+    assert "--keepalive" in text
+
+
+def test_the_keepalive_advice_is_dropped_once_it_is_in_use(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Recommending a flag the user already passed reads as a bug."""
+    print_close_advice(
+        config(), args_for("--keepalive", "10.221.188.20"), HandshakeRejected(401, "rejected")
+    )
+    text = capsys.readouterr().out
+    assert "rejected the session cookie" in text
+    assert "--keepalive" not in text
+
+
+def test_an_ordinary_close_gets_no_advice(capsys: pytest.CaptureFixture[str]) -> None:
+    print_close_advice(config(), args_for(), None)
+    print_close_advice(config(), args_for(), HandshakeRejected(502, "gateway error"))
+    assert capsys.readouterr().out == ""

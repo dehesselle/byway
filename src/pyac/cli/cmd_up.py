@@ -26,7 +26,7 @@ from pyac.config import Credentials, GatewayConfig
 from pyac.cstp.config import TunnelConfig
 from pyac.cstp.link import ReconnectingLink
 from pyac.cstp.session import CstpSession
-from pyac.errors import ProtocolParseError, PyacError
+from pyac.errors import HandshakeRejected, ProtocolParseError, PyacError
 from pyac.net.icmp import build_echo_request, parse_icmp
 from pyac.net.ipv4 import PROTO_ICMP, PROTO_TCP, PROTO_UDP, build_ipv4, parse_ipv4
 from pyac.runtime.driver import Driver
@@ -227,6 +227,30 @@ def print_liveness(
         )
 
 
+def print_close_advice(
+    config: TunnelConfig, args: argparse.Namespace, error: BaseException | None
+) -> None:
+    """Turn the way this run ended into the flag that would have prevented it.
+
+    A rejected cookie is not a transport failure. The gateway destroyed the
+    session -- almost always because the idle timer fired -- and nothing short
+    of authenticating again will bring it back, which a background task must
+    not do on its own.
+    """
+    if not isinstance(error, HandshakeRejected) or error.status not in (401, 403):
+        return
+
+    print(
+        "\nthe gateway rejected the session cookie, so the tunnel could not be\n"
+        "rebuilt without authenticating again. run pyac up once more to do that."
+    )
+    if config.idle_timeout and not args.keepalive:
+        print(
+            f"an idle tunnel is destroyed after {config.idle_timeout}s on this gateway;\n"
+            f"--keepalive <ip-inside-the-vpn> keeps payload flowing so it never happens."
+        )
+
+
 def run(args: argparse.Namespace) -> int:
     configure_logging(args.verbose)
     gateway = parse_gateway(args.gateway, pin=args.pin, no_verify=args.no_verify)
@@ -307,6 +331,7 @@ async def _run(args: argparse.Namespace, gateway: GatewayConfig, credentials: Cr
 
         if link.close_reason:
             print(f"\ntunnel closed: {link.close_reason}")
+            print_close_advice(config, args, link.close_error)
         if link.reconnects:
             print(
                 f"reconnects {link.reconnects}"

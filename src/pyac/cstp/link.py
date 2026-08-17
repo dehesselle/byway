@@ -26,7 +26,7 @@ from typing import Protocol, runtime_checkable
 from pyac._async import first_of
 from pyac.cstp.config import TunnelConfig
 from pyac.cstp.session import CstpSession
-from pyac.errors import TunnelClosed
+from pyac.errors import AuthError, HandshakeRejected, TunnelClosed
 
 log = logging.getLogger("pyac.cstp")
 
@@ -128,6 +128,7 @@ class ReconnectingLink:
         self._idle = asyncio.Event()  # never set: stands in for a missing wake
         self._closed = asyncio.Event()
         self._close_reason = ""
+        self._close_error: BaseException | None = None
         self._supervisor: asyncio.Task[None] | None = None
 
         self.reconnects = 0
@@ -222,6 +223,15 @@ class ReconnectingLink:
     def close_reason(self) -> str:
         return self._close_reason
 
+    @property
+    def close_error(self) -> BaseException | None:
+        """What ended the link, as an exception, when there was one.
+
+        The string in :attr:`close_reason` is for the user; this is for code
+        that wants to react to *why* rather than match on prose.
+        """
+        return self._close_error
+
     def send(self, packet: bytes) -> None:
         session = self._session
         if session is not None and not session.closed.is_set():
@@ -285,18 +295,31 @@ class ReconnectingLink:
         if previous is not None:
             await previous.aclose()
 
+        last_error: BaseException | None = None
         for attempt in range(self._max_attempts):
             if self._closed.is_set():
                 return False
             try:
                 session = await self._open_session()
             except Exception as exc:
-                # Anything at all is worth retrying here: a refused connection,
-                # a TLS failure, a DNS blip on the gateway's own name.
+                # Most failures are worth retrying: a refused connection, a TLS
+                # failure, a DNS blip on the gateway's own name. A rejected
+                # cookie is not -- see _is_permanent.
+                last_error = exc
+                if _is_permanent(exc):
+                    log.error("reconnect is not possible: %s", exc)
+                    self._fail(f"cannot re-establish the tunnel: {exc}", exc)
+                    return False
+                if attempt + 1 >= self._max_attempts:
+                    # No backoff before giving up: that last sleep buys nothing
+                    # and delays the error the user is waiting for.
+                    log.warning("reconnect attempt %d failed (%s); giving up", attempt + 1, exc)
+                    break
                 delay = self._backoff_ms[min(attempt, len(self._backoff_ms) - 1)] / 1000
                 log.warning(
-                    "reconnect attempt %d failed (%s); retrying in %.0fs",
+                    "reconnect attempt %d of %d failed (%s); retrying in %.0fs",
                     attempt + 1,
+                    self._max_attempts,
                     exc,
                     delay,
                 )
@@ -318,13 +341,29 @@ class ReconnectingLink:
             self._flush_pending(session)
             return True
 
-        self._fail(f"could not re-establish the tunnel after {reason}")
+        detail = f": {last_error}" if last_error is not None else ""
+        self._fail(f"could not re-establish the tunnel after {reason}{detail}", last_error)
         return False
 
     def _flush_pending(self, session: CstpSession) -> None:
         while self._pending:
             session.send(self._pending.popleft())
 
-    def _fail(self, reason: str) -> None:
+    def _fail(self, reason: str, error: BaseException | None = None) -> None:
         self._close_reason = reason
+        self._close_error = error
         self._closed.set()
+
+
+def _is_permanent(exc: BaseException) -> bool:
+    """Errors that no amount of retrying can fix.
+
+    A rejected cookie is the one that matters in practice. When this gateway's
+    idle timeout fires it does not merely drop the connection, it destroys the
+    session, so ``CONNECT`` comes back 401 and will keep doing so. Retrying is
+    then not just futile but actively unwise: repeated rejected credentials are
+    how accounts meet a lockout policy.
+    """
+    if isinstance(exc, AuthError):
+        return True
+    return isinstance(exc, HandshakeRejected) and exc.status in (401, 403)
