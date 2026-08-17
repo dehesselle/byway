@@ -31,6 +31,7 @@ import httpx
 from pyac._logging import configure as configure_logging
 from pyac._pcap import PcapWriter
 from pyac.auth.client import authenticate, build_ssl_context, logout
+from pyac.cli import buffer_bytes
 from pyac.cli.cmd_probe import parse_gateway
 from pyac.cli.cmd_up import read_password
 from pyac.config import Credentials, GatewayConfig
@@ -72,6 +73,13 @@ def register(
     )
     parser.add_argument("--no-verify", action="store_true", help="skip verification (prefer --pin)")
     parser.add_argument("--mtu", type=int, help="override the MTU requested of the gateway")
+    parser.add_argument(
+        "--buffer",
+        type=int,
+        metavar="KIB",
+        help="per-socket send and receive buffer in KiB (default 1024); one "
+        "connection cannot exceed buffer/RTT, so raise it for a distant gateway",
+    )
     parser.add_argument("-X", "--method", default="GET", help="HTTP method (default GET)")
     parser.add_argument(
         "-H",
@@ -262,7 +270,7 @@ async def _run(
                 f"error; pass --route-policy all to try anyway."
             )
 
-        driver = Driver(session)
+        driver = Driver(session, buffer=buffer_bytes(args))
         driver.start()
         try:
             response, timing = await _fetch(driver, target, args, headers)

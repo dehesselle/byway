@@ -546,7 +546,11 @@ def test_in_window_reset_tears_down_the_connection(h: Harness) -> None:
 def test_out_of_window_reset_is_ignored(h: Harness) -> None:
     """RFC 5961: a blind off-path guess must not kill the connection."""
     h.establish()
-    h.peer(seq=seq_add(PEER_ISN, 999_999), ack=seq_add(ISN, 1), flags=Flag.RST)
+    # Past the window, derived rather than hardcoded: the window follows
+    # rx_buffer, and a fixed offset silently lands *inside* it the moment the
+    # buffer grows -- turning this into a test that the RST is accepted.
+    beyond = h.tcb.config.rx_buffer + 10_000
+    h.peer(seq=seq_add(PEER_ISN, beyond), ack=seq_add(ISN, 1), flags=Flag.RST)
 
     assert h.tcb.state is State.ESTABLISHED
     assert h.tcb.error is None
@@ -837,7 +841,10 @@ def test_a_whole_window_of_out_of_order_segments_is_held() -> None:
     h = Harness()
     h.establish(peer_mss=1460)
     base = seq_add(PEER_ISN, 1)
-    for index in range(1, 200):  # segment 0 is the hole
+    # Enough segments to fill whatever the configured window is, so this keeps
+    # testing what it says when rx_buffer changes.
+    segments = h.tcb.config.rx_buffer // 1460
+    for index in range(1, segments + 1):  # segment 0 is the hole
         h.peer(
             seq=seq_add(base, index * 1460),
             ack=seq_add(ISN, 1),

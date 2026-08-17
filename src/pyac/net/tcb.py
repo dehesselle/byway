@@ -10,8 +10,15 @@ Deliberately absent, and unlikely to arrive:
 
 * SACK and timestamps -- both are parsed for length and skipped (see
   ``tcp.py``), so an unexpected option can never desynchronise the option walk,
-  but neither is advertised. SACK is the single biggest remaining chunk of
-  complexity and only pays off on links losing several segments per window.
+  but neither is advertised.
+
+  SACK was left out on the assumption that it only pays off on links losing
+  several segments per window; the deciding evidence turned out to come from
+  the other end. The production gateway's peers offer no ``SACK_PERM`` at all,
+  so the option would never be negotiated on the path that matters however
+  well it were implemented. Under 2% loss both ways against a Linux kernel,
+  NewReno recovers a 2 MiB transfer in ~15 s, and the measured limit on a real
+  tunnel is the receive window rather than loss recovery. SACK stays out.
 * ``LISTEN`` and ``SYN_RECEIVED``. Nothing here ever accepts a connection, so
   the shipping code never grows that attack surface. A passive-open TCB exists
   in the test tree only, to give the harness a peer.
@@ -47,6 +54,10 @@ from pyac.net.tcp import (
 # "No threshold yet": stay in slow start until the first loss says otherwise.
 INFINITE_SSTHRESH = 0x7FFFFFFF
 
+# See TcbConfig.max_ooo_segments. Named here so the driver can scale it with a
+# custom buffer without reaching into the dataclass for its default.
+DEFAULT_MAX_OOO_SEGMENTS = 4096
+
 
 class State(Enum):
     CLOSED = auto()
@@ -74,11 +85,21 @@ class TcbConfig:
 
     mss: int = 1343  # tunnel MTU 1383 - 20 IP - 20 TCP
 
-    # Sized for a ~100 ms corporate RTT: 256 KiB in flight is roughly 2.5 MB/s
-    # on one connection. This only works because window scaling is negotiated;
-    # without it the 16-bit field would cap the advertisement at 64 KiB.
-    rx_buffer: int = 256 * 1024
-    tx_buffer: int = 256 * 1024
+    # One connection cannot go faster than buffer / RTT, whatever the code
+    # does, so on a distant gateway this number *is* the throughput. Measured
+    # against a real kernel at 150 ms: 256 KiB gave 0.8 MB/s and 1 MiB gave
+    # 3.6 MB/s, which is why the default is no longer 256 KiB.
+    #
+    # It is a cap, not an allocation -- the buffers are bytearrays that grow
+    # on demand -- so idle connections cost nothing and the price is only paid
+    # by a reader that falls behind. Beyond 1 MiB the returns fade for what
+    # this tool is for (REST calls and SSH) while the worst case,
+    # max_sockets x rx_buffer, grows into gigabytes.
+    #
+    # Only usable because window scaling is negotiated; without it the 16-bit
+    # field would cap the advertisement at 64 KiB regardless.
+    rx_buffer: int = 1024 * 1024
+    tx_buffer: int = 1024 * 1024
 
     rto_initial_ms: int = 1000
     rto_min_ms: int = 250
@@ -100,13 +121,20 @@ class TcbConfig:
     # order. This cap exists only so that a peer sending one byte per segment
     # cannot make the list itself the cost.
     #
-    # It must stay comfortably above rx_buffer/mss. At 64 it bound first, and
-    # the effect was not a saving but a stall: a 256 KiB window holds ~180
-    # full segments, so after a single loss we discarded ~190 KB that had
-    # arrived intact and made the peer send it again -- repeatedly, since the
-    # next window did the same. Found by the L3 conformance suite under 2%
-    # loss, where a 2 MiB transfer went from 15 s to over 120 s.
-    max_ooo_segments: int = 1024
+    # It must stay comfortably above rx_buffer/mss, and therefore has to be
+    # raised whenever rx_buffer is -- test_the_segment_cap_stays_clear_of_the
+    # _byte_bound enforces that, sized against the RFC 1122 floor MSS of 536
+    # rather than a typical one, since a peer really may send segments that
+    # small.
+    #
+    # At 64 it bound first, and the effect was not a saving but a stall: a
+    # 256 KiB window holds ~180 full segments, so after a single loss we
+    # discarded ~190 KB that had arrived intact and made the peer send it
+    # again -- repeatedly, since the next window did the same. Found by the L3
+    # conformance suite under 2% loss, where a 2 MiB transfer went from 15 s to
+    # over 120 s. Seen again at a 4 MiB buffer, which is what the invariant
+    # test now exists to prevent.
+    max_ooo_segments: int = DEFAULT_MAX_OOO_SEGMENTS
 
 
 def initial_window_scale(buffer_size: int) -> int:
@@ -707,7 +735,13 @@ class Tcb:
         if self.state.is_closed or self.state is State.TIME_WAIT:
             return
         opened = self.recv_window - before
-        threshold = max(2 * self.peer_mss, self.config.rx_buffer // 2)
+        # RFC 1122 4.2.3.3: the smallest increase worth telling the sender
+        # about is min(MSS, buffer/2) -- below one segment it cannot act on the
+        # news anyway. This was max(2*MSS, buffer/2), which inverts the rule
+        # and, worse, scales the wrong way: the larger the receive buffer, the
+        # rarer the updates, so raising the buffer to cover a high-latency link
+        # made throughput worse rather than better.
+        threshold = min(self.peer_mss, self.config.rx_buffer // 2)
         if before == 0 or opened >= threshold:
             self._schedule_ack(now, immediate=True)
             self._flush_ack(now)

@@ -21,6 +21,7 @@ import time
 from pyac._logging import configure as configure_logging
 from pyac._pcap import PcapWriter
 from pyac.auth.client import authenticate, build_ssl_context, logout
+from pyac.cli import buffer_bytes
 from pyac.cli.cmd_probe import parse_gateway
 from pyac.config import Credentials, GatewayConfig
 from pyac.cstp.config import TunnelConfig
@@ -63,6 +64,13 @@ def register(
     )
     parser.add_argument("--no-verify", action="store_true", help="skip verification (prefer --pin)")
     parser.add_argument("--mtu", type=int, help="override the MTU requested of the gateway")
+    parser.add_argument(
+        "--buffer",
+        type=int,
+        metavar="KIB",
+        help="per-socket send and receive buffer in KiB (default 1024); one "
+        "connection cannot exceed buffer/RTT, so raise it for a distant gateway",
+    )
     parser.add_argument(
         "--dump-only",
         action="store_true",
@@ -370,7 +378,7 @@ async def _serve_socks(link: ReconnectingLink, args: argparse.Namespace) -> None
     host, port = parse_listen(args.socks)
     username, password = parse_socks_auth(args.socks_auth)
 
-    driver = Driver(link)
+    driver = Driver(link, buffer=buffer_bytes(args))
     driver.start()
     proxy = Socks5Server(
         driver,

@@ -19,6 +19,12 @@ IFB=ifb-pyac
 DELAY=${1:-20ms}
 LOSS=${2:-2%}
 
+# netem's default queue is 1000 packets, which is itself a bandwidth limit:
+# a link holds delay x rate packets in flight, so at 150ms RTT anything past
+# a ~1 MiB window overflows the qdisc and the losses look like a bug in the
+# thing under test. Raised well clear of any window we would configure.
+LIMIT=${PYAC_NETEM_LIMIT:-50000}
+
 if [ "${1:-}" = "--off" ]; then
     tc qdisc del dev "$DEV" root 2>/dev/null || true
     tc qdisc del dev "$DEV" ingress 2>/dev/null || true
@@ -39,14 +45,14 @@ ip link set "$IFB" up
 
 # Egress: what the kernel sends us.
 tc qdisc del dev "$DEV" root 2>/dev/null || true
-tc qdisc add dev "$DEV" root netem delay "$DELAY" loss "$LOSS"
+tc qdisc add dev "$DEV" root netem delay "$DELAY" loss "$LOSS" limit "$LIMIT"
 
 # Ingress: what we send the kernel, redirected so it can have a qdisc.
 tc qdisc del dev "$DEV" ingress 2>/dev/null || true
 tc qdisc add dev "$DEV" handle ffff: ingress
 tc filter add dev "$DEV" parent ffff: protocol ip u32 match u32 0 0 \
     action mirred egress redirect dev "$IFB"
-tc qdisc add dev "$IFB" root netem delay "$DELAY" loss "$LOSS"
+tc qdisc add dev "$IFB" root netem delay "$DELAY" loss "$LOSS" limit "$LIMIT"
 
 echo "$DEV impaired both ways: delay $DELAY, loss $LOSS"
 echo

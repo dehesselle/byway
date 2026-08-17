@@ -37,7 +37,8 @@ from pyac.net.events import (
     SocketWritable,
 )
 from pyac.net.stack import PyStack, StackConfig
-from pyac.net.tcb import State, TcbConfig
+from pyac.net.tcb import DEFAULT_MAX_OOO_SEGMENTS, State, TcbConfig
+from pyac.net.tcp import DEFAULT_MSS
 
 log = logging.getLogger("pyac.runtime")
 
@@ -49,6 +50,17 @@ MAX_IDLE_MS = 500
 
 def monotonic_ms() -> int:
     return int(time.monotonic() * 1000)
+
+
+def _ooo_cap(buffer: int) -> int:
+    """Reassembly entries to allow for a buffer of this size.
+
+    Has to scale with the buffer or it binds first, and then a single loss
+    means discarding in-window data that arrived intact -- a stall rather than
+    a saving. Sized against the RFC 1122 floor MSS, since a peer may really
+    send segments that small.
+    """
+    return max(DEFAULT_MAX_OOO_SEGMENTS, buffer // DEFAULT_MSS + 64)
 
 
 class TcpStream:
@@ -149,19 +161,34 @@ class Driver:
         link: IpLink,
         *,
         mss: int | None = None,
+        buffer: int | None = None,
         stack_config: StackConfig | None = None,
     ) -> None:
         self.link = link
         tunnel = link.config
 
+        # Per-socket send and receive buffer. Worth exposing because it sets
+        # the throughput ceiling directly: one connection cannot exceed
+        # buffer / RTT, so a distant gateway wants a larger one and nothing
+        # else moves the number.
+        tcb = TcbConfig(mss=mss if mss is not None else tunnel.mtu - 40)
+        if buffer is not None:
+            tcb = replace(
+                tcb,
+                rx_buffer=buffer,
+                tx_buffer=buffer,
+                # Scaled with the buffer, or it binds first and a single loss
+                # becomes a stall instead of a retransmission.
+                max_ooo_segments=_ooo_cap(buffer),
+            )
         self.config = stack_config or StackConfig(
             local_ip=tunnel.address,
             netmask=tunnel.netmask,
             mtu=tunnel.mtu,
-            # MSS from the tunnel MTU, minus the IP and TCP headers. Also
-            # clamped to the peer's advertised MSS during the handshake --
-            # getting this wrong is the classic silent-hang bug.
-            tcb=TcbConfig(mss=mss if mss is not None else tunnel.mtu - 40),
+            # MSS comes from the tunnel MTU, minus the IP and TCP headers, and
+            # is also clamped to the peer's advertised MSS during the
+            # handshake -- getting this wrong is the classic silent-hang bug.
+            tcb=tcb,
             rng=lambda: secrets.randbits(32),
         )
         self.stack = PyStack(self.config)
