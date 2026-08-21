@@ -13,8 +13,21 @@ jobs:
         os: [windows-latest, ubuntu-latest]
         python: ["3.12", "3.13"]
     runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: pyac
     steps:
       - uses: actions/checkout@v4
+        with:
+          path: pyac
+      # The stack lives in usernet, which [tool.uv.sources] resolves from
+      # ../usernet. Until it is released anywhere, CI has to supply that
+      # sibling itself -- and testing against the tip of it is what catches a
+      # breaking change there on the commit that caused it rather than later.
+      - uses: actions/checkout@v4
+        with:
+          repository: dehesselle/usernet
+          path: usernet
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
@@ -22,33 +35,6 @@ jobs:
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run mypy src
-      # Layers L0/L1/L2/L4/L5 -- everything except the tun-device conformance
-      # suite, which needs a real kernel and runs in the job below.
-      - run: uv run pytest -q -m "not linux_only and not needs_gateway"
-
-  conformance:
-    # L3: validates our TCP against a real kernel stack over a tun device.
-    # Two instances of our own stack can be consistently wrong together, so
-    # this is the only layer that proves conformance rather than self-agreement.
-    # The same tests run locally under WSL2.
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-      - run: uv sync --dev
-      # Root creates the interface; the tests then run as the ordinary user,
-      # because `ip tuntap add ... user` is what makes that possible.
-      - run: sudo sh tests/conformance/setup.sh
-      - run: uv run python -m tests.conformance.preflight
-      - name: clean link
-        run: uv run pytest tests/conformance -v
-      # The run that matters. A tun device is lossless, so a clean pass only
-      # exercises the happy path; loss and latency are what exercise recovery.
-      # impair.sh degrades *both* directions -- a plain root qdisc is egress
-      # only and would leave our own retransmission untested.
-      - name: 2% loss, 20ms delay, both directions
-        run: |
-          sudo sh tests/conformance/impair.sh
-          PYAC_TUN_NETEM=1 uv run pytest tests/conformance -v
+      # The conformance suite that used to run here moved to usernet with the
+      # stack it validates. What is left is everything that is about CSTP.
+      - run: uv run pytest -q -m "not needs_gateway"

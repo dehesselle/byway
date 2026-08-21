@@ -14,16 +14,16 @@ import json
 from pathlib import Path
 
 import pytest
+from usernet.net.ipv4 import parse_ipv4
+from usernet.net.tcp import Flag, parse_tcp
+from usernet.testing.peer import TcpPeer, http_handler
 
 from pyac.cli.cmd_get import Target, _run
 from pyac.config import Credentials, GatewayConfig
 from pyac.errors import ConnectionTimeout, RouteNotAllowed
-from pyac.net.ipv4 import parse_ipv4
-from pyac.net.tcp import Flag, parse_tcp
 from tests.fakegw import FakeGateway
 from tests.fakegw.server import DEFAULT_TUNNEL_HEADERS
 from tests.integration.test_tunnel import pcap_packets
-from tests.vnet.peer import TcpPeer, http_handler
 
 CORPUS = Path(__file__).parent.parent / "corpus"
 

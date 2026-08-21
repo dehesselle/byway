@@ -12,13 +12,13 @@ import ssl
 from pathlib import Path
 
 import pytest
+from usernet.pcap import PcapWriter
+from usernet.testing.pcap import records as pcap_records
 
-from pyac._pcap import PcapWriter
 from pyac.cstp.framing import PacketType, encode_frame
 from pyac.cstp.session import CstpSession
 from pyac.errors import HandshakeRejected, ProtocolParseError
 from tests.fakegw import FakeGateway
-from tests.unit.test_pcap import records as pcap_records
 
 
 def pcap_packets(path: Path) -> list[bytes]:

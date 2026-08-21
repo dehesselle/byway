@@ -5,7 +5,7 @@ tunnel, framing, the userspace IPv4 stack, a TCP connection, TLS over that
 connection, and httpx driving the lot. If this works against the gateway, the
 design works.
 
-The request itself is httpx's, through :mod:`pyac.httpcore_backend`, so
+The request itself is httpx's, through :mod:`usernet.http`, so
 chunked encoding, keep-alive, redirects, and content decoding are all handled
 by a library that has seen far more of the web than we have.
 
@@ -27,9 +27,12 @@ import time
 from dataclasses import dataclass
 
 import httpx
+from usernet.http import TunnelTransport
+from usernet.pcap import PcapWriter
+from usernet.routing import describe_routes, route_allows
+from usernet.runtime.driver import Driver
 
 from pyac._logging import configure as configure_logging
-from pyac._pcap import PcapWriter
 from pyac.auth.client import authenticate, build_ssl_context, logout
 from pyac.cli import apply_profile, buffer_bytes, finalize_route_policy
 from pyac.cli.cmd_probe import parse_gateway
@@ -37,9 +40,6 @@ from pyac.cli.cmd_up import read_password
 from pyac.config import Credentials, GatewayConfig
 from pyac.cstp.session import CstpSession
 from pyac.errors import PyacError, RouteNotAllowed
-from pyac.httpcore_backend import TunnelTransport
-from pyac.routing import describe_routes, route_allows
-from pyac.runtime.driver import Driver
 
 DEFAULT_BODY_LIMIT = 8 * 1024 * 1024
 

@@ -19,17 +19,17 @@ from pathlib import Path
 import httpx
 import pytest
 import trustme
+from usernet.http import TunnelTransport
+from usernet.runtime.driver import Driver
+from usernet.testing.peer import TcpPeer
+from usernet.testing.tls_endpoint import TlsHttpEndpoint
 
 from pyac.cli.cmd_get import Target, _run
 from pyac.config import Credentials, GatewayConfig
-from pyac.httpcore_backend import TunnelTransport
-from pyac.runtime.driver import Driver
 from tests.fakegw import FakeGateway
 from tests.fakegw.server import DEFAULT_TUNNEL_HEADERS
 from tests.integration.test_get import auth_exchange
 from tests.integration.test_tunnel import session_for
-from tests.vnet.peer import TcpPeer
-from tests.vnet.tls_endpoint import TlsHttpEndpoint
 
 SERVER_IP = "10.11.12.13"
 SERVER_NAME = "api.internal"

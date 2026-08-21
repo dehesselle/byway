@@ -158,48 +158,51 @@ per-user bandwidth policy looks like from inside. 10 Mbit/s of policy works out 
 1.15 MB/s of goodput once tunnel and TLS overhead come off. Measure your own before assuming
 either explanation applies.
 
-If you need more than this can give, the `NetworkBackend` protocol exists so a native stack
-could be dropped in — but on a high-latency or policed link that would change nothing,
+If you need more than this can give, `usernet`'s `NetworkBackend` protocol exists so a native
+stack could be dropped in — but on a high-latency or policed link that would change nothing,
 because the limit is not the CPU.
+
+## Where the stack lives
+
+The TCP/IP stack, the driver, the SOCKS5 server and the transport bridge are not in this
+repository. They are [`usernet`](https://github.com/dehesselle/usernet), because none of that
+code knows what AnyConnect is and a second client — a Tailscale one — needed exactly the same
+half. What is left here is CSTP: authentication, the tunnel handshake, frame transport, and
+reconnection.
+
+The seam is `usernet.link.IpLink`: anything that can carry raw IPv4 packets and say what
+address it was assigned. `ReconnectingLink` is this project's implementation of it.
 
 ## How it is tested
 
-The TCP stack carries the risk, so that is where the confidence comes from. Five layers, four
-of which need no network at all:
+CSTP is what this repository is responsible for, and the ways a gateway can surprise you are
+what it tests:
 
-- **Codecs** — checksums, IPv4/TCP/UDP/ICMP, CSTP framing, SOCKS5, auth XML against a corpus
-  of real gateway responses.
-- **The state machine** — RFC 9293 driven by a frozen integer clock, so every timing
-  assertion is exact. Any test here that depends on wall time is a bug in the test.
-- **A virtual network** — two stacks over a simulated lossy, reordering link on a virtual
-  clock. Proves self-consistency, *not* conformance: two instances of the same stack can be
-  wrong together.
-- **Conformance against a real Linux kernel** over a tun device, degraded with `netem`. This
-  is the layer that catches a shared misreading of the RFC, and it did: it found a missing
-  RFC 5961 challenge ACK, a reassembly queue that discarded in-window data, and a receive
-  window that halved itself exactly when a hole opened. See `tests/conformance/README.md`.
+- **Codecs** — CSTP framing and the tunnel headers, auth XML against a corpus of real gateway
+  responses, plus property-based tests feeding arbitrary bytes into every parser and asserting
+  that only declared parse errors escape.
 - **A fake CSTP gateway** that serves the auth exchange, speaks framing, injects faults, and
   terminates IP into a test peer — so `pyac up` → SOCKS5 → a real HTTP GET runs in CI with no
   VPN anywhere.
+- **Reconnection and rekey**, including the case that matters most: a gateway that assigns a
+  different address on reconnect, where every open socket has to fail with a reason rather
+  than hang.
 
-Plus property-based tests: arbitrary bytes into every parser, asserting only declared parse
-errors escape.
+The stack's own five test layers — the frozen-clock state machine, the virtual network, and
+conformance against a real Linux kernel over a tun device degraded with `netem` — moved to
+`usernet` along with the code they cover.
 
 ## Development
 
 ```console
+$ git clone https://github.com/dehesselle/usernet ../usernet
 $ uv sync --dev
 $ uv run pytest
 $ uv run ruff check . && uv run ruff format --check . && uv run mypy src
 ```
 
-`pyac.net` is sans-IO: it never opens a socket, sleeps, or reads a clock — time enters as an
-`int` parameter and randomness as an injected callable. That is what makes the TCP state
-machine testable deterministically, and it is enforced by a ruff banned-import rule plus a
-runtime guard in `tests/unit/test_sans_io_guard.py`.
-
-The conformance suite needs a Linux tun device; it is skipped elsewhere, and runs locally
-under WSL2. `tests/conformance/README.md` has the setup.
+`usernet` is consumed from `../usernet` as an editable path dependency, so it has to be
+checked out beside this repository. Nothing is published to an index yet.
 
 ## A note on policy
 

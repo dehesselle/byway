@@ -16,10 +16,10 @@ from pathlib import Path
 from types import TracebackType
 
 import trustme
+from usernet.testing.peer import TcpPeer
 
 from pyac.cstp.framing import FrameDecoder, PacketType, encode_frame
 from pyac.errors import ProtocolParseError
-from tests.vnet.peer import TcpPeer
 
 MAX_REQUEST_BYTES = 256 * 1024
 

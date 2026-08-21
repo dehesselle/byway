@@ -5,10 +5,20 @@ description = "Userspace Cisco AnyConnect (CSTP) client with an in-process TCP/I
 readme = "README.md"
 authors = [{ name = "René de Hesselle", email = "dehesselle@web.de" }]
 requires-python = ">=3.12"
-dependencies = ["httpx>=0.27,<0.29", "defusedxml>=0.7.1", "platformdirs>=4"]
+dependencies = [
+    "usernet[httpx]>=0.1",
+    "httpx>=0.27,<0.29",
+    "defusedxml>=0.7.1",
+    "platformdirs>=4",
+]
 
 [project.optional-dependencies]
 keyring = ["keyring>=25"]
+
+[tool.uv.sources]
+# Developed alongside this project rather than released. Swap for a version
+# specifier the moment usernet is published anywhere.
+usernet = { path = "../usernet", editable = true }
 
 [project.scripts]
 pyac = "pyac.cli.main:main"
@@ -26,9 +36,9 @@ dev = [
     "hypothesis>=6.100",
     "ruff>=0.6",
     "mypy>=1.11",
-    "dnspython>=2.6",       # differential testing of net/dnswire.py only
-    "scapy>=2.5",           # header-field oracle; build/dissect needs no npcap
     "trustme>=1.1",         # self-signed certs for the fake gateway
+    "usernet[testing]",     # TcpPeer and TlsHttpEndpoint for the fake gateway
+    "keyring>=25",          # the [keyring] extra, so mypy sees its real types
 ]
 
 # ---------------------------------------------------------------------------
@@ -46,33 +56,10 @@ src = ["src", "tests"]
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "ASYNC", "TID"]
 
-# The sans-IO contract: pyac.net must never perform I/O, read a clock, or use
-# global randomness. Enforced mechanically here and re-checked at runtime by
-# tests/unit/test_sans_io_guard.py, which asserts these modules stay out of
-# sys.modules when pyac.net.stack is imported in a clean subprocess.
-[tool.ruff.lint.flake8-tidy-imports.banned-api]
-"asyncio".msg = "pyac.net must be sans-IO"
-"socket".msg = "pyac.net must be sans-IO"
-"ssl".msg = "pyac.net must be sans-IO"
-"time".msg = "time is a parameter, not an import"
-"random".msg = "inject an rng callable"
-
-[tool.ruff.lint.per-file-ignores]
-# The banned-api rule above exists solely to keep src/pyac/net/** sans-IO.
-# Ruff cannot express "apply only to this directory", so everywhere else opts
-# out. Only src/pyac/net/** is deliberately absent from this list.
-"src/pyac/*.py" = ["TID251"]
-"src/pyac/auth/**" = ["TID251"]
-"src/pyac/cstp/**" = ["TID251"]
-"src/pyac/runtime/**" = ["TID251"]
-"src/pyac/socks/**" = ["TID251"]
-"src/pyac/cli/**" = ["TID251"]
-"tests/**" = ["TID251"]
-
-# httpcore_backend.py implements httpcore's AsyncNetworkBackend, whose methods
-# take a `timeout` argument. The signature is not ours to choose, and renaming
-# it would simply break the seam ASYNC109 is trying to protect.
-"src/pyac/httpcore_backend.py" = ["TID251", "ASYNC109"]
+# The sans-IO contract that used to be enforced here now lives in usernet,
+# which owns the stack it applies to. Nothing left in this project is sans-IO:
+# the auth client speaks HTTP, the CSTP session owns a TLS connection, and the
+# codecs beneath them are pure but have no import to ban.
 
 # ---------------------------------------------------------------------------
 
@@ -83,9 +70,9 @@ warn_redundant_casts = true
 warn_unused_ignores = true
 
 [[tool.mypy.overrides]]
-# The sans-IO core and the protocol codecs carry the correctness risk and have
-# no untyped third-party surface, so they get the strict treatment.
-module = ["pyac.net.*", "pyac.cstp.*"]
+# The protocol codecs carry the correctness risk and have no untyped
+# third-party surface, so they get the strict treatment.
+module = ["pyac.cstp.*"]
 strict = true
 
 [[tool.mypy.overrides]]
@@ -103,7 +90,6 @@ addopts = "--strict-markers"
 markers = [
     "slow: takes more than a second",
     "needs_gateway: requires a real AnyConnect gateway (never runs in CI)",
-    "linux_only: requires a Linux tun device or network namespace",
 ]
 
 [tool.coverage.run]

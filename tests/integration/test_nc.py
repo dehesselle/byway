@@ -13,18 +13,18 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import pytest
+from usernet.runtime.driver import Driver
+from usernet.runtime.stdio import StdioBridge
+from usernet.socks import Socks5Server
+from usernet.socks.client import open_via_socks
+from usernet.testing.peer import TcpPeer
+from usernet.testing.pipes import Pipes
 
 from pyac.cli.cmd_nc import ProxiedRemote, bridge
 from pyac.errors import ConnectionRefused, NetworkError, RouteNotAllowed
-from pyac.runtime.driver import Driver
-from pyac.runtime.stdio import StdioBridge
-from pyac.socks import Socks5Server
-from pyac.socks.client import open_via_socks
 from tests.fakegw import FakeGateway
 from tests.fakegw.server import DEFAULT_TUNNEL_HEADERS
 from tests.integration.test_tunnel import session_for
-from tests.unit.test_stdio import Pipes
-from tests.vnet.peer import TcpPeer
 
 SERVER_IP = "10.11.12.13"
 OUTSIDE_IP = "8.8.8.8"

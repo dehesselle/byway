@@ -24,6 +24,11 @@ import contextlib
 import sys
 from typing import Protocol
 
+from usernet.routing import describe_routes, route_allows
+from usernet.runtime.driver import Driver, TcpStream
+from usernet.runtime.stdio import CHUNK, StdioBridge
+from usernet.socks.client import open_via_socks
+
 from pyac._logging import configure as configure_logging
 from pyac.auth.client import authenticate, build_ssl_context, logout
 from pyac.cli import apply_profile, buffer_bytes, finalize_route_policy
@@ -32,10 +37,6 @@ from pyac.cli.cmd_up import parse_listen, parse_socks_auth, read_password
 from pyac.config import Credentials
 from pyac.cstp.session import CstpSession
 from pyac.errors import PyacError, RouteNotAllowed
-from pyac.routing import describe_routes, route_allows
-from pyac.runtime.driver import Driver, TcpStream
-from pyac.runtime.stdio import CHUNK, StdioBridge
-from pyac.socks.client import open_via_socks
 
 
 def register(
@@ -139,7 +140,7 @@ class ProxiedRemote:
 
 
 class TunnelRemote:
-    """A :class:`~pyac.runtime.driver.TcpStream`, presented as a :class:`Remote`."""
+    """A :class:`~usernet.runtime.driver.TcpStream`, presented as a :class:`Remote`."""
 
     def __init__(self, stream: TcpStream) -> None:
         self._stream = stream

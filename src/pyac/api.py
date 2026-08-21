@@ -24,6 +24,12 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 import httpx
+from usernet.http import TunnelTransport, httpx_client, httpx_transport
+from usernet.routing import describe_routes, route_allows
+from usernet.runtime.driver import Driver, TcpStream
+from usernet.runtime.tls import wrap as wrap_tls
+from usernet.runtime.transport import wrap_stream
+from usernet.socks import Socks5Server
 
 from pyac.auth.client import authenticate, build_ssl_context, logout
 from pyac.config import DEFAULT_USER_AGENT, Credentials, GatewayConfig
@@ -31,12 +37,6 @@ from pyac.cstp.config import TunnelConfig
 from pyac.cstp.link import ReconnectingLink
 from pyac.cstp.session import CstpSession
 from pyac.errors import PyacError
-from pyac.httpcore_backend import TunnelTransport, httpx_client, httpx_transport
-from pyac.routing import describe_routes, route_allows
-from pyac.runtime.driver import Driver, TcpStream
-from pyac.runtime.tls import wrap as wrap_tls
-from pyac.runtime.transport import wrap_stream
-from pyac.socks import Socks5Server
 
 __all__ = [
     "Credentials",

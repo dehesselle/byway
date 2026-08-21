@@ -1,7 +1,7 @@
 """One CSTP tunnel over one TLS connection.
 
 Owns the socket, the framing, and the DPD/keepalive timers, and presents an
-:class:`~pyac.cstp.link.IpLink`. Reconnection and rekey live one layer up, in
+:class:`~usernet.link.IpLink`. Reconnection and rekey live one layer up, in
 ``ReconnectingLink``, precisely so this class can stay "one connection, from
 handshake to close".
 """
@@ -17,7 +17,8 @@ import time
 from collections import Counter, deque
 from types import TracebackType
 
-from pyac._pcap import PcapWriter
+from usernet.pcap import PcapWriter
+
 from pyac.cstp.config import TunnelConfig, parse_tunnel_config
 from pyac.cstp.framing import (
     FRAME_DISCONN,
@@ -45,7 +46,7 @@ MAX_OUTBOUND_BACKLOG = 256
 
 
 class CstpSession:
-    """A live CSTP tunnel, satisfying :class:`~pyac.cstp.link.IpLink`."""
+    """A live CSTP tunnel, satisfying :class:`~usernet.link.IpLink`."""
 
     def __init__(
         self,

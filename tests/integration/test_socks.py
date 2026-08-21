@@ -16,11 +16,9 @@ from pathlib import Path
 
 import pytest
 import pytest_asyncio
-
-from pyac.errors import NetworkError
-from pyac.runtime.driver import Driver
-from pyac.socks import Socks5Server
-from pyac.socks.protocol import (
+from usernet.runtime.driver import Driver
+from usernet.socks import Socks5Server
+from usernet.socks.protocol import (
     ATYP_DOMAIN,
     ATYP_IPV4,
     ATYP_IPV6,
@@ -32,10 +30,12 @@ from pyac.socks.protocol import (
     VERSION,
     Reply,
 )
+from usernet.testing.peer import TcpPeer, http_handler
+
+from pyac.errors import NetworkError
 from tests.fakegw import FakeGateway
 from tests.fakegw.server import DEFAULT_TUNNEL_HEADERS
 from tests.integration.test_tunnel import session_for
-from tests.vnet.peer import TcpPeer, http_handler
 
 CLIENT_IP = "10.20.30.40"  # what DEFAULT_TUNNEL_HEADERS assigns
 SERVER_IP = "10.11.12.13"  # inside the advertised 10.0.0.0/8

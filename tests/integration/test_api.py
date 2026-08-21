@@ -19,6 +19,8 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import pytest
+from usernet.runtime.driver import Driver
+from usernet.testing.peer import TcpPeer, http_handler
 
 import pyac
 from pyac.api import VpnClient
@@ -26,11 +28,9 @@ from pyac.config import GatewayConfig
 from pyac.cstp.link import ReconnectingLink
 from pyac.cstp.session import CstpSession
 from pyac.errors import NetworkError, PyacError
-from pyac.runtime.driver import Driver
 from tests.fakegw import FakeGateway
 from tests.fakegw.server import DEFAULT_TUNNEL_HEADERS
 from tests.integration.test_get import auth_exchange
-from tests.vnet.peer import TcpPeer, http_handler
 
 SERVER_IP = "10.11.12.13"
 TUNNEL_HEADERS = [(n, v) for n, v in DEFAULT_TUNNEL_HEADERS if n != "X-CSTP-Banner"]
@@ -250,7 +250,7 @@ def test_importing_the_package_pulls_in_nothing_heavy() -> None:
         "import sys, pyac; "
         "print(pyac.__version__); "
         "assert 'httpx' not in sys.modules, 'httpx imported eagerly'; "
-        "assert 'pyac.net.tcb' not in sys.modules, 'the stack imported eagerly'"
+        "assert 'usernet.net.tcb' not in sys.modules, 'the stack imported eagerly'"
     )
     done = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True)
     assert done.returncode == 0, done.stderr

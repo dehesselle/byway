@@ -1,4 +1,4 @@
-"""The IP link abstraction.
+"""The CSTP implementation of the IP link abstraction.
 
 Everything above this interface deals in whole IP packets and never learns
 that the TLS connection underneath was torn down and rebuilt. That is what
@@ -6,10 +6,17 @@ makes rekey and reconnect a non-event rather than a rewrite -- and it is why
 this indirection exists from the start instead of being retrofitted once
 reconnection becomes a problem.
 
-The contract is deliberately batch-shaped. :meth:`take_inbound` drains
-everything received since the last call so the driver can feed the stack in
-one pass, and queued outbound packets are coalesced into a single TLS write,
+The interface itself is :class:`usernet.link.IpLink`, re-exported here because
+this module used to define it and callers still expect to find it. The
+contract is deliberately batch-shaped: :meth:`~usernet.link.IpLink.take_inbound`
+drains everything received since the last call so the driver can feed the stack
+in one pass, and queued outbound packets are coalesced into a single TLS write,
 which is the largest cheap throughput win available.
+
+:class:`~pyac.cstp.config.TunnelConfig` carries far more than the stack needs --
+DPD timers, rekey method, the banner -- but it satisfies
+:class:`usernet.link.LinkConfig` structurally, so it is handed over whole rather
+than being split in two.
 """
 
 from __future__ import annotations
@@ -21,49 +28,17 @@ import time
 from collections import deque
 from collections.abc import Awaitable, Callable, Sequence
 from types import TracebackType
-from typing import Protocol, runtime_checkable
 
-from pyac._async import first_of
+from usernet.aio import first_of
+from usernet.link import IpLink
+
 from pyac.cstp.config import TunnelConfig
 from pyac.cstp.session import CstpSession
 from pyac.errors import AuthError, HandshakeRejected, TunnelClosed
 
+__all__ = ["DEFAULT_BACKOFF_MS", "DEFAULT_BUFFER_LIMIT", "IpLink", "ReconnectingLink"]
+
 log = logging.getLogger("pyac.cstp")
-
-
-@runtime_checkable
-class IpLink(Protocol):
-    """A bidirectional channel carrying raw IPv4 packets."""
-
-    @property
-    def config(self) -> TunnelConfig:
-        """The gateway's tunnel parameters: address, MTU, DNS, routes."""
-        ...
-
-    @property
-    def wake(self) -> asyncio.Event:
-        """Set whenever inbound packets arrive, so the driver can wait on it."""
-        ...
-
-    def send(self, packet: bytes) -> None:
-        """Queue one IP packet. Non-blocking; the writer task coalesces."""
-        ...
-
-    def take_inbound(self) -> list[bytes]:
-        """Drain every IP packet received since the last call."""
-        ...
-
-    @property
-    def closed(self) -> asyncio.Event:
-        """Set when the link is finished; :attr:`close_reason` says why."""
-        ...
-
-    @property
-    def close_reason(self) -> str: ...
-
-    async def aclose(self) -> None:
-        """Shut the link down cleanly."""
-        ...
 
 
 # Reconnect backoff. Short enough that a blip is barely noticed, long enough

@@ -3,44 +3,47 @@
 Session tokens and passwords are stripped by a filter on the handler rather
 than at each call site. Redaction that depends on every future ``log.debug``
 being careful is redaction that will eventually fail.
+
+The mechanism lives in :mod:`usernet.log`; what belongs here is the part only
+this project knows -- what an AnyConnect secret looks like on the wire.
+
+:func:`configure` deliberately names two loggers. ``usernet`` carries the
+stack's own diagnostics (retransmits, window stalls, dropped packets), and
+those are wanted precisely when something has gone wrong; attaching only to
+``pyac`` would send them nowhere.
 """
 
 from __future__ import annotations
 
-import logging
 import re
-import sys
 from typing import TextIO
+
+from usernet.log import DEFAULT_PATTERNS
+from usernet.log import RedactingFilter as _RedactingFilter
+from usernet.log import configure as _configure
+from usernet.log import redact as _redact
+
+__all__ = ["PATTERNS", "RedactingFilter", "configure", "redact"]
 
 # webvpn cookies and session tokens are long opaque strings; ASA's own tokens
 # look like "35B466@-123@A96E@AE5E...". Match generously and redact the tail.
-_PATTERNS = [
+PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"(webvpn=)([^\s;,]+)", re.IGNORECASE),
     re.compile(r"(<session-token>)(.*?)(</session-token>)", re.IGNORECASE | re.DOTALL),
     re.compile(r"(<password>)(.*?)(</password>)", re.IGNORECASE | re.DOTALL),
-    re.compile(r"(password[\"']?\s*[:=]\s*)(\S+)", re.IGNORECASE),
-]
+    *DEFAULT_PATTERNS,
+)
 
 
-class RedactingFilter(logging.Filter):
+class RedactingFilter(_RedactingFilter):
     """Removes credentials from formatted log records."""
 
-    def filter(self, record: logging.LogRecord) -> bool:
-        message = record.getMessage()
-        redacted = redact(message)
-        if redacted != message:
-            record.msg = redacted
-            record.args = ()
-        return True
+    def __init__(self) -> None:
+        super().__init__(PATTERNS)
 
 
 def redact(text: str) -> str:
-    for pattern in _PATTERNS:
-        if pattern.groups == 3:
-            text = pattern.sub(r"\1<redacted>\3", text)
-        else:
-            text = pattern.sub(r"\1<redacted>", text)
-    return text
+    return _redact(text, PATTERNS)
 
 
 def configure(verbosity: int, stream: TextIO | None = None) -> None:
@@ -51,15 +54,4 @@ def configure(verbosity: int, stream: TextIO | None = None) -> None:
     corrupt the stream it is trying to describe. Callers that care pass it
     explicitly rather than trusting the default to stay put.
     """
-    level = logging.WARNING if verbosity == 0 else logging.DEBUG
-    fmt = "%(message)s" if verbosity < 2 else "%(asctime)s %(name)s %(message)s"
-
-    handler = logging.StreamHandler(stream if stream is not None else sys.stderr)
-    handler.setFormatter(logging.Formatter(fmt, datefmt="%H:%M:%S"))
-    handler.addFilter(RedactingFilter())
-
-    root = logging.getLogger("pyac")
-    root.handlers.clear()
-    root.addHandler(handler)
-    root.setLevel(level)
-    root.propagate = False
+    _configure(verbosity, loggers=("pyac", "usernet"), patterns=PATTERNS, stream=stream)

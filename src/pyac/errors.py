@@ -1,24 +1,54 @@
 """Exception hierarchy for pyac.
 
-Every error the library raises derives from :class:`PyacError`. The
-``NetworkError`` branch mirrors the errors an ordinary socket would raise, so
-the SOCKS5 layer can map them onto reply codes with a single table.
+Every error the library raises derives from :class:`PyacError`, which is
+:class:`usernet.errors.UsernetError` under another name. An alias rather than a
+subclass, and that is the whole point: the stack, the sockets and the SOCKS
+server live in ``usernet`` and raise ``usernet`` errors, so a ``PyacError`` that
+did not also catch those would quietly stop covering half of what can go wrong.
+
+The ``NetworkError`` branch is re-exported from there for the same reason --
+callers import it from here, and where the class object is defined is not their
+business. The pyac-specific errors below (authentication, the CSTP tunnel) are
+the ones that genuinely have no meaning outside this project.
 """
 
 from __future__ import annotations
 
+from usernet.errors import (
+    ConnectionRefused,
+    ConnectionReset,
+    ConnectionTimeout,
+    HostUnreachable,
+    NetworkError,
+    ProtocolParseError,
+    ResolveError,
+    RouteNotAllowed,
+    UsernetError,
+)
 
-class PyacError(Exception):
-    """Base class for every pyac error."""
+__all__ = [
+    "AuthChallengeRequired",
+    "AuthError",
+    "AuthFailed",
+    "ConnectionRefused",
+    "ConnectionReset",
+    "ConnectionTimeout",
+    "GroupSelectionRequired",
+    "HandshakeRejected",
+    "HostUnreachable",
+    "NetworkError",
+    "PostureCheckRequired",
+    "ProtocolParseError",
+    "PyacError",
+    "RekeyFailed",
+    "ResolveError",
+    "RouteNotAllowed",
+    "TunnelAddressChanged",
+    "TunnelClosed",
+    "TunnelError",
+]
 
-
-class ProtocolParseError(PyacError):
-    """Malformed input from the gateway, the network, or a SOCKS client.
-
-    Parsers raise only this. Never let ``IndexError``, ``struct.error``, or
-    ``UnicodeDecodeError`` escape a parser -- callers cannot distinguish those
-    from genuine bugs.
-    """
+PyacError = UsernetError
 
 
 # --- authentication --------------------------------------------------------
@@ -87,43 +117,7 @@ class TunnelAddressChanged(TunnelError):
     """
 
 
-# --- network (socket-level, mapped onto SOCKS5 reply codes) ----------------
-
-
-class NetworkError(PyacError):
-    """Base for errors on a connection carried by the tunnel."""
-
-
-class ConnectionRefused(NetworkError):
-    """RST in response to SYN, or an ICMP hard error during connect."""
-
-
-class ConnectionReset(NetworkError):
-    """RST on an established connection."""
-
-
-class ConnectionTimeout(NetworkError):
-    """Connect timed out, or retransmission backoff was exhausted."""
-
-
-class HostUnreachable(NetworkError):
-    """ICMP destination unreachable, or the name did not resolve."""
-
-
-class RouteNotAllowed(NetworkError):
-    """The destination lies outside the gateway's split-tunnel scope.
-
-    Raised eagerly rather than letting the gateway drop the packets silently,
-    which would otherwise surface as an unexplained connect timeout.
-    """
-
-    def __init__(self, dst: str) -> None:
-        super().__init__(
-            f"{dst} is outside the tunnel's split-include routes; "
-            f"use --route-policy all or --route-add to override"
-        )
-        self.dst = dst
-
-
-class ResolveError(NetworkError):
-    """In-tunnel DNS resolution failed."""
+# The network branch -- NetworkError and everything under it -- is imported at
+# the top of this module from usernet.errors, where the stack that raises it
+# lives. Defining it again here would produce a second set of classes that look
+# identical and never match in an `except`.

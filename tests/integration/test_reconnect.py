@@ -17,14 +17,14 @@ import time
 from pathlib import Path
 
 import pytest
+from usernet.runtime.driver import Driver
+from usernet.testing.peer import TcpPeer, http_handler
 
 from pyac.cstp.link import ReconnectingLink
 from pyac.cstp.session import CstpSession
 from pyac.errors import HandshakeRejected, NetworkError
-from pyac.runtime.driver import Driver
 from tests.fakegw import FakeGateway
 from tests.fakegw.server import DEFAULT_TUNNEL_HEADERS
-from tests.vnet.peer import TcpPeer, http_handler
 
 SERVER_IP = "10.11.12.13"
 BASE_HEADERS = [(n, v) for n, v in DEFAULT_TUNNEL_HEADERS if n != "X-CSTP-Banner"]
