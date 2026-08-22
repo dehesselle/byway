@@ -774,7 +774,7 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.27,<0.29" },
     { name = "keyring", marker = "extra == 'keyring'", specifier = ">=25" },
     { name = "platformdirs", specifier = ">=4" },
-    { name = "usernet", extras = ["httpx"], editable = "../usernet" },
+    { name = "usernet", extras = ["httpx"], path = "C:/Users/Rene/Developer/usernet/dist/usernet-0.2.0-py3-none-any.whl" },
 ]
 provides-extras = ["keyring"]
 
@@ -789,7 +789,7 @@ dev = [
     { name = "pytest-timeout", specifier = ">=2.3" },
     { name = "ruff", specifier = ">=0.6" },
     { name = "trustme", specifier = ">=1.1" },
-    { name = "usernet", extras = ["testing"], editable = "../usernet" },
+    { name = "usernet", extras = ["testing"], path = "C:/Users/Rene/Developer/usernet/dist/usernet-0.2.0-py3-none-any.whl" },
 ]
 
 [[package]]
@@ -945,7 +945,11 @@ wheels = [
 
 [[package]]
 name = "usernet"
-source = { editable = "../usernet" }
+version = "0.2.0"
+source = { path = "C:/Users/Rene/Developer/usernet/dist/usernet-0.2.0-py3-none-any.whl" }
+wheels = [
+    { filename = "usernet-0.2.0-py3-none-any.whl", hash = "sha256:f94d8ca1ada6b073d936cf3e8bff84f214b05b1deb56f8542bfcd3e2195f71b4" },
+]
 
 [package.optional-dependencies]
 httpx = [
@@ -961,17 +965,3 @@ requires-dist = [
     { name = "trustme", marker = "extra == 'testing'", specifier = ">=1.1" },
 ]
 provides-extras = ["httpx", "testing"]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "httpx", specifier = ">=0.27,<0.29" },
-    { name = "hypothesis", specifier = ">=6.100" },
-    { name = "mypy", specifier = ">=1.11" },
-    { name = "pytest", specifier = ">=8" },
-    { name = "pytest-asyncio", specifier = ">=0.24" },
-    { name = "pytest-cov", specifier = ">=5" },
-    { name = "pytest-timeout", specifier = ">=2.3" },
-    { name = "ruff", specifier = ">=0.6" },
-    { name = "scapy", specifier = ">=2.5" },
-    { name = "trustme", specifier = ">=1.1" },
-]

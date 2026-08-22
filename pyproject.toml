@@ -6,7 +6,7 @@ readme = "README.md"
 authors = [{ name = "René de Hesselle", email = "dehesselle@web.de" }]
 requires-python = ">=3.12"
 dependencies = [
-    "usernet[httpx]>=0.1",
+    "usernet[httpx]",
     "httpx>=0.27,<0.29",
     "defusedxml>=0.7.1",
     "platformdirs>=4",
@@ -16,9 +16,7 @@ dependencies = [
 keyring = ["keyring>=25"]
 
 [tool.uv.sources]
-# Developed alongside this project rather than released. Swap for a version
-# specifier the moment usernet is published anywhere.
-usernet = { path = "../usernet", editable = true }
+usernet = { path = "C:/Users/Rene/Developer/usernet/dist/usernet-0.2.0-py3-none-any.whl" }
 
 [project.scripts]
 pyac = "pyac.cli.main:main"
