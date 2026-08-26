@@ -8,6 +8,7 @@ the descriptors ``ssh`` would hand us.
 from __future__ import annotations
 
 import asyncio
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -170,6 +171,24 @@ async def test_the_bridge_ends_when_the_far_side_closes(certs: Path) -> None:
     ):
         pipes.send(b"go\n")
         assert await asyncio.wait_for(pipes.receive(), timeout=5) == b"bye\n"
+        await asyncio.wait_for(task, timeout=5)
+        assert task.done() and task.exception() is None
+
+
+async def test_a_gone_stdout_reader_ends_the_bridge_quietly(certs: Path) -> None:
+    """ssh exiting can close its read end mid-write; that's not a failure.
+
+    This is what produced the stray ``pyac nc: [Errno 22] Invalid argument``
+    after every ordinary ssh exit: the far side's reply was still in flight
+    when the consumer of our stdout went away.
+    """
+
+    async with (
+        proxy_for(certs) as (server, _peer),
+        bridged(server) as (pipes, task),
+    ):
+        os.close(pipes.stdout_read)  # as ssh exiting closes its read end
+        pipes.send(b"x\n")
         await asyncio.wait_for(task, timeout=5)
         assert task.done() and task.exception() is None
 

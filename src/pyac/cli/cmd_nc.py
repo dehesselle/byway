@@ -192,7 +192,12 @@ async def _to_stdout(remote: Remote, stdio: StdioBridge) -> None:
         data = await remote.read(CHUNK)
         if not data:
             break
-        await stdio.write(data)
+        try:
+            await stdio.write(data)
+        except OSError:
+            # ssh has already gone away and closed its end of our stdout --
+            # a normal teardown race, not a failure worth reporting.
+            break
 
 
 # --- entry points ------------------------------------------------------------
