@@ -6,7 +6,7 @@ readme = "README.md"
 authors = [{ name = "René de Hesselle", email = "dehesselle@web.de" }]
 requires-python = ">=3.12"
 dependencies = [
-    "usernet[httpx]",
+    "usernet[httpx]>=0.3",
     "httpx>=0.27,<0.29",
     "defusedxml>=0.7.1",
     "platformdirs>=4",
@@ -15,15 +15,24 @@ dependencies = [
 [project.optional-dependencies]
 keyring = ["keyring>=25"]
 
-[tool.uv.sources]
-usernet = { path = "C:/Users/Rene/Developer/usernet/dist/usernet-0.2.0-py3-none-any.whl" }
-
 [project.scripts]
 pyac = "pyac.cli.main:main"
 
 [build-system]
 requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
+
+[[tool.uv.index]]
+name = "hera"
+url = "http://hera.tailb04b73.ts.net:8080/simple/"
+# Only usernet is pinned to this index.
+explicit = true
+
+[tool.uv.sources]
+# Path override wins while working in this checkout, so `hera` stays dormant
+# until this line is dropped -- the moment to do that once usernet is stable
+# enough not to track from source.
+usernet = { path = "../usernet", editable = true }
 
 [dependency-groups]
 dev = [

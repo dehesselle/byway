@@ -352,7 +352,7 @@ async def _fetch(
     finished = time.monotonic()
 
     return response, Timing(
-        connect_ms=transport.backend.last_connect_ms,
+        connect_ms=transport.last_connect_ms,
         total_ms=(finished - started) * 1000,
     )
 
