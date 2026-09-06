@@ -746,7 +746,6 @@ dependencies = [
     { name = "defusedxml" },
     { name = "httpx" },
     { name = "platformdirs" },
-    { name = "usernet", extra = ["httpx"] },
 ]
 
 [package.optional-dependencies]
@@ -774,7 +773,6 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.27,<0.29" },
     { name = "keyring", marker = "extra == 'keyring'", specifier = ">=25" },
     { name = "platformdirs", specifier = ">=4" },
-    { name = "usernet", extras = ["httpx"], editable = "../usernet" },
 ]
 provides-extras = ["keyring"]
 
@@ -948,9 +946,6 @@ name = "usernet"
 source = { editable = "../usernet" }
 
 [package.optional-dependencies]
-httpx = [
-    { name = "httpx" },
-]
 testing = [
     { name = "trustme" },
 ]
