@@ -111,6 +111,30 @@ async def test_the_cookie_is_reused_rather_than_reauthenticating(certs: Path) ->
     assert gateway.connect_headers["cookie"] == "webvpn=TESTTOKEN"
 
 
+async def test_traffic_totals_survive_a_reconnect(certs: Path) -> None:
+    """The counters live on the session, which a reconnect replaces. Totals
+    that dropped to zero on every rekey would read as traffic that vanished."""
+    async with FakeGateway([], certs_dir=certs, tunnel_headers=BASE_HEADERS) as gateway:
+        link = linking(gateway)
+        await link.start()
+        try:
+            link.send(b"\x45\x00first out")
+            gateway.send_packet(b"\x45\x00first in")
+            await wait_until(lambda: link.bytes_in == 10)
+            assert link.bytes_out == 11
+
+            gateway.send_disconnect()
+            await wait_until(lambda: link.reconnects >= 1)
+            assert (link.bytes_in, link.bytes_out) == (10, 11)
+
+            link.send(b"\x45\x00second")
+            gateway.send_packet(b"\x45\x00second")
+            await wait_until(lambda: link.bytes_in == 18)
+            assert link.bytes_out == 19
+        finally:
+            await link.aclose()
+
+
 async def test_rekey_happens_early_and_by_itself(certs: Path) -> None:
     """Proactive, at a fraction of the interval: being disconnected mid-request
     costs far more than one spare handshake."""

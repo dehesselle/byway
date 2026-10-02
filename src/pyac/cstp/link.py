@@ -110,11 +110,18 @@ class ReconnectingLink:
         self.address_changes = 0
         self.dropped_while_down = 0
 
+        # Traffic of sessions already replaced. Their counters die with them,
+        # and totals that reset on every rekey would read as lost traffic.
+        self._closed_bytes_in = 0
+        self._closed_bytes_out = 0
+        self._started_at = 0.0
+
     # --- lifecycle ---------------------------------------------------------
 
     async def start(self) -> TunnelConfig:
         """Open the first session and begin supervising it."""
         self._session = await self._open_session()
+        self._started_at = time.monotonic()
         self._config = self._session.config
         if self._reconnect:
             self._supervisor = asyncio.create_task(self._supervise(), name="pyac-reconnect")
@@ -181,6 +188,36 @@ class ReconnectingLink:
         if config is None or not config.rekey_time or not self._reconnect:
             return None
         return config.rekey_time * self._rekey_fraction
+
+    @property
+    def rekey_at(self) -> float | None:
+        """When the current session will be rebuilt, on the monotonic clock."""
+        session = self._session
+        if session is None or not self._reconnect:
+            return None
+        return self._rekey_deadline(session)
+
+    @property
+    def started_at(self) -> float:
+        """When the link first came up, on the monotonic clock; 0 before that."""
+        return self._started_at
+
+    @property
+    def reconnecting(self) -> bool:
+        """Between sessions: the old one is gone, a new one is being opened."""
+        return self._session is None and self._started_at > 0 and not self._closed.is_set()
+
+    @property
+    def bytes_in(self) -> int:
+        """IP bytes received over the life of the link, across reconnects."""
+        session = self._session
+        return self._closed_bytes_in + (session.bytes_in if session is not None else 0)
+
+    @property
+    def bytes_out(self) -> int:
+        """IP bytes sent over the life of the link, across reconnects."""
+        session = self._session
+        return self._closed_bytes_out + (session.bytes_out if session is not None else 0)
 
     @property
     def wake(self) -> asyncio.Event:
@@ -266,6 +303,11 @@ class ReconnectingLink:
     async def _reopen(self, reason: str) -> bool:
         previous = self._session
         previous_address = previous.config.address if previous is not None else None
+        if previous is not None:
+            # Before it is detached, so the totals never dip. Nothing reaches a
+            # detached session anyway: send() and take_inbound() go by _session.
+            self._closed_bytes_in += previous.bytes_in
+            self._closed_bytes_out += previous.bytes_out
         self._session = None
         if previous is not None:
             await previous.aclose()

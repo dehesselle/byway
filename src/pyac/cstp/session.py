@@ -100,6 +100,9 @@ class CstpSession:
         # identical to one that was simply idle.
         self.frames_in: Counter[str] = Counter()
         self.frames_out: Counter[str] = Counter()
+        # IP bytes carried in DATA frames, inner headers included.
+        self.bytes_in = 0
+        self.bytes_out = 0
         self.started_at = 0.0
         self.last_frame_at = 0.0
 
@@ -129,6 +132,7 @@ class CstpSession:
             return
         self._outbound.append(encode_frame(PacketType.DATA, packet))
         self.frames_out["DATA"] += 1
+        self.bytes_out += len(packet)
         # Captured here rather than in the writer task, which holds encoded
         # frames rather than IP packets. A one-sided capture is half a
         # diagnostic: Wireshark cannot compute RTT, spot a retransmission, or
@@ -282,6 +286,7 @@ class CstpSession:
                     self.dropped_inbound += 1
                     continue
                 self._inbound.append(frame.payload)
+                self.bytes_in += len(frame.payload)
                 if self._pcap is not None:
                     self._pcap.write(frame.payload)
                 self._wake.set()
