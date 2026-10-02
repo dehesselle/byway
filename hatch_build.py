@@ -13,6 +13,14 @@ _USERNET_IN_SDIST = "src/usernet"
 
 class CustomBuildHook(BuildHookInterface):
     def initialize(self, version, build_data):
+        # The "editable" version is what `uv sync` installs for local dev; it
+        # must resolve usernet via the sibling checkout's own editable install
+        # (see [tool.uv.sources] in pyproject.toml), not a vendored snapshot
+        # baked in here. Force-including source only makes sense for a real
+        # distributable wheel/sdist, so skip it for editable builds.
+        if version == "editable":
+            return
+
         sibling_usernet = Path(self.root).parent / "usernet"
         usernet_in_sdist = Path(self.root) / _USERNET_IN_SDIST
 
