@@ -38,6 +38,11 @@ $ ssh -o ProxyCommand="pyac nc --via 127.0.0.1:1080 %h %p" rene@10.221.188.32
 $ pyac get http://10.221.188.20/v1/things
 ```
 
+On a terminal, `pyac up` keeps a small live panel beneath its output: how long ago the
+gateway last sent anything, the last keepalive's round trip, tunnel traffic, and each open
+SOCKS connection. Output that is piped or redirected stays plain, and so does
+`--no-dashboard`.
+
 Credentials never go in `argv`: use `PYAC_PASSWORD`, `--password-stdin`, or the interactive
 prompt. Certificate pinning is `--pin sha256:<hex>`, compatible with openconnect's
 `--servercert`, and is the right answer for an internal CA — not `--no-verify`.

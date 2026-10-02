@@ -28,6 +28,8 @@ from pyac._logging import configure as configure_logging
 from pyac.auth.client import authenticate, build_ssl_context, logout
 from pyac.cli import apply_profile, buffer_bytes, finalize_route_policy
 from pyac.cli.cmd_probe import parse_gateway
+from pyac.cli.dashboard import Sources, dashboard
+from pyac.cli.dashboard import wanted as wants_dashboard
 from pyac.config import Credentials, GatewayConfig
 from pyac.cstp.config import TunnelConfig
 from pyac.cstp.link import ReconnectingLink
@@ -147,6 +149,11 @@ def register(
         "--coalesce",
         action="store_true",
         help="batch frames into one TLS record (known to break Cisco ASA; see docs/protocol.md)",
+    )
+    parser.add_argument(
+        "--no-dashboard",
+        action="store_true",
+        help="plain output only, even on a terminal (the live panel is shown by default)",
     )
     parser.set_defaults(handler=run)
 
@@ -361,25 +368,27 @@ async def _run(args: argparse.Namespace, gateway: GatewayConfig, credentials: Cr
         print_liveness(config, args, link.rekey_seconds)
         print("\ntunnel is up; press Ctrl-C to disconnect")
 
-        if args.ping:
-            pinger = asyncio.create_task(
-                _ping_loop(link, args.ping, args.ping_interval), name="pyac-ping"
-            )
-        else:
-            pinger = None
+        sources = Sources(link, gateway.host, keepalive=bool(args.socks and args.keepalive))
+        async with dashboard(sources, enabled=wants_dashboard(args)) as drawing:
+            if args.ping:
+                pinger = asyncio.create_task(
+                    _ping_loop(link, args.ping, args.ping_interval), name="pyac-ping"
+                )
+            else:
+                pinger = None
 
-        if args.socks:
-            await _serve_socks(link, args)
-        elif args.dump_only or args.ping:
-            await _dump(link, verbose=args.verbose > 0)
-        else:
-            print("(nothing to do: pass --socks to serve a proxy, or --dump-only)")
-            await link.closed.wait()
+            if args.socks:
+                await _serve_socks(link, args, sources)
+            elif args.dump_only or args.ping:
+                await _dump(link, verbose=args.verbose > 0, heartbeat=not drawing)
+            else:
+                print("(nothing to do: pass --socks to serve a proxy, or --dump-only)")
+                await link.closed.wait()
 
-        if pinger is not None:
-            pinger.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await pinger
+            if pinger is not None:
+                pinger.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await pinger
 
         if link.close_reason:
             print(f"\ntunnel closed: {link.close_reason}")
@@ -417,7 +426,7 @@ def parse_socks_auth(spec: str | None) -> tuple[str | None, str | None]:
     return username, password
 
 
-async def _serve_socks(link: ReconnectingLink, args: argparse.Namespace) -> None:
+async def _serve_socks(link: ReconnectingLink, args: argparse.Namespace, sources: Sources) -> None:
     """Run the proxy until the tunnel closes for good, or Ctrl-C arrives."""
     host, port = parse_listen(args.socks)
     username, password = parse_socks_auth(args.socks_auth)
@@ -435,6 +444,7 @@ async def _serve_socks(link: ReconnectingLink, args: argparse.Namespace) -> None
     )
     try:
         await proxy.start()
+        sources.proxy = proxy
         print(f"\nsocks5    {proxy.address}" + ("  (authenticated)" if username else ""))
         if username is None:
             # Loopback still means every local process, including a browser
@@ -446,7 +456,7 @@ async def _serve_socks(link: ReconnectingLink, args: argparse.Namespace) -> None
         keeper = None
         if args.keepalive:
             keeper = asyncio.create_task(
-                _keepalive_loop(driver, args.keepalive, args.keepalive_interval),
+                _keepalive_loop(driver, args.keepalive, args.keepalive_interval, sources),
                 name="pyac-keepalive",
             )
 
@@ -472,7 +482,9 @@ async def _serve_socks(link: ReconnectingLink, args: argparse.Namespace) -> None
         await driver.aclose()
 
 
-async def _keepalive_loop(driver: Driver, target: str, interval: float) -> None:
+async def _keepalive_loop(
+    driver: Driver, target: str, interval: float, sources: Sources | None = None
+) -> None:
     """Push real traffic through the tunnel so the idle timer keeps resetting.
 
     DPD and keepalive *frames* do not always count: on several gateways only
@@ -487,6 +499,8 @@ async def _keepalive_loop(driver: Driver, target: str, interval: float) -> None:
         # unremarkable. A lost reply is not news either -- the point is the
         # bytes we sent, not the ones that came back.
         rtt = await driver.ping(target, sequence, timeout=5.0)
+        if sources is not None:
+            sources.keepalive_rtt, sources.keepalive_at = rtt, time.monotonic()
         log.debug(
             "keepalive %d to %s: %s",
             sequence,
@@ -522,7 +536,7 @@ async def _ping_loop(link: ReconnectingLink, target: str, interval: float) -> No
 HEARTBEAT_SECONDS = 30.0
 
 
-async def _dump(link: ReconnectingLink, *, verbose: bool) -> None:
+async def _dump(link: ReconnectingLink, *, verbose: bool, heartbeat: bool = True) -> None:
     """Report inbound packets until the tunnel closes or Ctrl-C arrives."""
     total = 0
     next_heartbeat = time.monotonic() + HEARTBEAT_SECONDS
@@ -542,7 +556,8 @@ async def _dump(link: ReconnectingLink, *, verbose: bool) -> None:
 
         # An idle tunnel is indistinguishable from a wedged one without this;
         # the frame counters show that keepalives and DPD are still flowing.
-        if time.monotonic() >= next_heartbeat:
+        # The dashboard, when there is one, already says as much every second.
+        if heartbeat and time.monotonic() >= next_heartbeat:
             next_heartbeat = time.monotonic() + HEARTBEAT_SECONDS
             session = link.session
             elapsed = time.monotonic() - session.started_at
