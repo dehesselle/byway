@@ -53,8 +53,9 @@ def register(
         parents=[shared],
         help="fetch one URL through the tunnel",
         description=(
-            "Authenticate, bring the tunnel up, and make one HTTP request through "
-            "the userspace TCP stack. Plain HTTP to an IP address only, for now."
+            "Authenticate, bring the tunnel up, and make one HTTP or HTTPS request "
+            "through the userspace TCP stack. The URL must name an IP address: "
+            "there is no resolver inside the tunnel."
         ),
     )
     parser.add_argument(
@@ -63,7 +64,7 @@ def register(
         default=None,
         help="gateway hostname, optionally host:port (or from --profile)",
     )
-    parser.add_argument("url", help="http://<ip>[:port][/path] inside the VPN")
+    parser.add_argument("url", help="http[s]://<ip>[:port][/path] inside the VPN")
     parser.add_argument("-u", "--user", help="username (or from --profile)")
     parser.add_argument("-g", "--group", help="tunnel group (see `pyac probe`)")
     parser.add_argument(
