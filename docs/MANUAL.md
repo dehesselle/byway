@@ -10,7 +10,7 @@ version; how pyac behaves while running is in [OPERATIONS.md](OPERATIONS.md).
 | `pyac probe GATEWAY` | Show the gateway's authentication form, tunnel groups and TLS certificate. Sends no credentials. |
 | `pyac up [GATEWAY]` | Authenticate and hold the tunnel open, optionally serving SOCKS5. |
 | `pyac nc HOST PORT` | Bridge stdin/stdout to one TCP connection inside the VPN, e.g. as an SSH `ProxyCommand`. |
-| `pyac get [GATEWAY] URL` | Authenticate, make one HTTP request through the tunnel, and exit. |
+| `pyac http [GATEWAY] URL` | Authenticate, make one HTTP request through the tunnel, and exit. |
 
 Options valid for every command, placed before or after it:
 
@@ -25,13 +25,13 @@ Options valid for every command, placed before or after it:
 
 ### Connection options
 
-`up`, `get` and `nc` (in direct mode) share these:
+`up`, `http` and `nc` (in direct mode) share these:
 
 | Option | Effect |
 | --- | --- |
 | `-u USER`, `-g GROUP` | Username and tunnel group. `pyac probe` lists the groups. |
 | `--profile NAME` | Fill in unset options from a saved [profile](#profiles). |
-| `--password-stdin` | Read the password from stdin (`up` and `get`). |
+| `--password-stdin` | Read the password from stdin (`up` and `http`). |
 | `--pin sha256:HEX` | Require this gateway certificate fingerprint. |
 | `--no-verify` | Skip gateway certificate verification. Prefer `--pin`. |
 | `--mtu MTU` | Override the MTU requested of the gateway. |
@@ -89,15 +89,20 @@ ssh -o ProxyCommand="pyac nc --via 127.0.0.1:1080 %h %p" rene@10.221.188.32
 credentials. Without `--via`, `nc` authenticates itself: `--gateway GATEWAY -u USER` or
 `--profile NAME`.
 
-`pyac get` brings up its own tunnel for one request:
+`pyac http` brings up its own tunnel for one request:
 
 ```sh
-pyac get --profile work http://10.221.188.20/v1/things
-pyac get vpn.corp.example -u rene -X POST -H "Content-Type: application/json" https://10.221.188.20/v1/things
+pyac http --profile work http://10.221.188.20/v1/things
+pyac http --profile work -H "Content-Type: application/json" -d '{"name": "x"}' https://10.221.188.20/v1/things
+pyac http --profile work -X PUT -H "Content-Type: application/json" -d @thing.json https://10.221.188.20/v1/things/42
+pyac http --profile work -X DELETE https://10.221.188.20/v1/things/42
 ```
 
 It takes `-X METHOD`, `-H "NAME: VALUE"` (repeatable), `-o FILE`, `-L` to follow redirects
-and `--timeout SECONDS`. For HTTPS targets, `--cacert FILE` sets the CA bundle, `-k`
+and `--timeout SECONDS`. `-d DATA` sends a request body: the text itself, `@FILE` for a
+file's contents, or `@-` for stdin, byte for byte. With `-d` the method defaults to `POST`.
+No `Content-Type` is implied, so set one with `-H`. `-d @-` cannot be combined with
+`--password-stdin`. For HTTPS targets, `--cacert FILE` sets the CA bundle, `-k`
 skips verification of the *target* (unlike `--no-verify`, which is about the gateway), and
 `--tls-name NAME` sets the name for SNI and certificate verification when the URL names
 an address. It defaults to the `Host` header. A URL with a name from the
@@ -129,7 +134,7 @@ With the table in place, names work wherever an address does:
 pyac up --profile orka --socks
 curl --socks5-hostname 127.0.0.1:1080 http://api.orka/
 ssh -o ProxyCommand="pyac nc --via 1080 %h %p" admin@node-1.orka
-pyac get --profile orka https://api.orka/v1/status
+pyac http --profile orka https://api.orka/v1/status
 ```
 
 Use `--socks5-hostname` (curl) or `socks5h://`, so the name reaches pyac. With plain
@@ -138,7 +143,7 @@ Use `--socks5-hostname` (curl) or `socks5h://`, so the name reaches pyac. With p
 
 Matching is exact and ignores case and a trailing dot. There are no wildcards and no search
 domain. A name missing from the table is refused with a message saying where names come
-from. It is never sent to the machine's DNS. `get` and direct-mode `nc` refuse it before
+from. It is never sent to the machine's DNS. `http` and direct-mode `nc` refuse it before
 authenticating. The split-route check applies to the address a name maps to.
 
 The table is static. A wrong entry connects to the wrong machine, which TLS verification or
@@ -172,7 +177,7 @@ keyring set work rene
 ## Profiles
 
 Retyping the same gateway, user, group, and pin for every invocation gets old fast. Save them
-once as a named profile and pass `--profile <name>` to `up`, `get`, or `nc` (direct mode)
+once as a named profile and pass `--profile <name>` to `up`, `http`, or `nc` (direct mode)
 instead — `probe` and `nc --via` take no credentials, so they have no use for one.
 
 The config file lives where [platformdirs](https://pypi.org/project/platformdirs/) puts

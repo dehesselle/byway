@@ -3,7 +3,7 @@
 Auth, CSTP, framing, the userspace IPv4 stack, TCP, a real TLS session
 terminated by real OpenSSL on the far side, and httpx driving all of it. The
 two halves are each proven elsewhere -- ``test_tls.py`` for the MemoryBIO
-wrapper, ``test_get.py`` for httpx over the tunnel -- so what this file is for
+wrapper, ``test_http.py`` for httpx over the tunnel -- so what this file is for
 is the composition, which is where glue bugs live.
 """
 
@@ -24,11 +24,11 @@ from usernet.runtime.driver import Driver
 from usernet.testing.peer import TcpPeer
 from usernet.testing.tls_endpoint import TlsHttpEndpoint
 
-from pyac.cli.cmd_get import Target, _run
+from pyac.cli.cmd_http import Target, _run
 from pyac.config import Credentials, GatewayConfig
 from tests.fakegw import FakeGateway
 from tests.fakegw.server import DEFAULT_TUNNEL_HEADERS
-from tests.integration.test_get import auth_exchange
+from tests.integration.test_http import auth_exchange
 from tests.integration.test_tunnel import session_for
 
 SERVER_IP = "10.11.12.13"

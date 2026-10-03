@@ -43,7 +43,7 @@ address it was assigned. `ReconnectingLink` is this project's implementation of 
 6. **Names come from the tunnel's host table or nowhere.** Falling back to the host's
    resolver would send internal hostnames to whatever DNS the machine uses. A name is
    resolved from a static table (the profile's `hosts`, `--add-host`, or `hosts=` in the
-   API) and refused otherwise, everywhere: SOCKS5, `get`, `nc` and the library. The table
+   API) and refused otherwise, everywhere: SOCKS5, `http`, `nc` and the library. The table
    is a `usernet.resolve.StaticResolver` on the driver, so every consumer gets the same
    answer, and routing is checked against the address, not the name.
 7. **Streams are real stdlib streams, and backpressure reaches the peer.**

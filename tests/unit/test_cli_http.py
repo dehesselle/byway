@@ -1,4 +1,4 @@
-"""URL and option handling for ``pyac get``.
+"""URL and option handling for ``pyac http``.
 
 The HTTP itself is httpx's since M7, so what is left here is what we decide:
 which URLs are acceptable, and which of the *two* trust decisions in this
@@ -8,10 +8,20 @@ command a given flag governs.
 from __future__ import annotations
 
 import argparse
+import io
+from pathlib import Path
 
 import pytest
 
-from pyac.cli.cmd_get import parse_header, parse_url, target_verification
+from pyac.cli import cmd_http
+from pyac.cli.cmd_http import (
+    parse_header,
+    parse_url,
+    read_body,
+    request_method,
+    target_verification,
+)
+from pyac.cli.main import build_parser
 
 # --- URLs ------------------------------------------------------------------
 
@@ -79,6 +89,67 @@ def test_a_header_is_split_on_the_first_colon() -> None:
 def test_a_header_without_a_colon_is_rejected() -> None:
     with pytest.raises(ValueError, match="missing a colon"):
         parse_header("NotAHeader")
+
+
+# --- the request body -------------------------------------------------------
+
+
+def test_no_data_means_no_body() -> None:
+    assert read_body(None) is None
+
+
+def test_data_is_sent_as_given() -> None:
+    assert read_body('{"name": "ä"}') == '{"name": "ä"}'.encode()
+
+
+def test_data_from_a_file_is_read_byte_for_byte(tmp_path: Path) -> None:
+    payload = b'{"a": 1}\r\n\x00\xff\n'
+    (tmp_path / "body.json").write_bytes(payload)
+    assert read_body(f"@{tmp_path / 'body.json'}") == payload
+
+
+def test_data_from_stdin(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("sys.stdin", io.TextIOWrapper(io.BytesIO(b"piped\n")))
+    assert read_body("@-") == b"piped\n"
+
+
+def test_a_missing_data_file_raises(tmp_path: Path) -> None:
+    with pytest.raises(OSError):
+        read_body(f"@{tmp_path / 'nope.json'}")
+
+
+def parse(*argv: str) -> argparse.Namespace:
+    """``argv`` ends with the URL; the gateway goes right before it."""
+    *flags, url = argv
+    return build_parser().parse_args(["http", "-u", "me", *flags, "gw", url])
+
+
+def test_the_method_defaults_to_get() -> None:
+    assert request_method(parse("http://10.0.0.1/")) == "GET"
+
+
+def test_data_makes_the_default_method_post() -> None:
+    assert request_method(parse("-d", "x", "http://10.0.0.1/")) == "POST"
+
+
+def test_an_explicit_method_wins_over_the_data_default() -> None:
+    assert request_method(parse("-X", "put", "-d", "x", "http://10.0.0.1/")) == "PUT"
+
+
+def test_body_and_password_cannot_both_come_from_stdin(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    args = parse("-d", "@-", "--password-stdin", "http://10.0.0.1/")
+    assert cmd_http.run(args) == 2
+    assert "both read stdin" in capsys.readouterr().err
+
+
+def test_an_unreadable_body_fails_before_authenticating(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    args = parse("-d", f"@{tmp_path / 'nope.json'}", "http://10.0.0.1/")
+    assert cmd_http.run(args) == 2
+    assert "cannot read the request body" in capsys.readouterr().err
 
 
 # --- the two trust decisions ------------------------------------------------

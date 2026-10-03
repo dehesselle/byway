@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from pyac.cli import cmd_get, cmd_nc, cmd_up
+from pyac.cli import cmd_http, cmd_nc, cmd_up
 from pyac.cli.main import build_parser
 
 
@@ -31,8 +31,8 @@ def test_up_without_a_user_fails_fast(capsys: pytest.CaptureFixture[str]) -> Non
     assert "-u/--user is required" in capsys.readouterr().err
 
 
-def test_get_without_a_gateway_or_user_fails_fast(capsys: pytest.CaptureFixture[str]) -> None:
-    assert cmd_get.run(parse("get", "http://10.0.0.1/")) == 2
+def test_http_without_a_gateway_or_user_fails_fast(capsys: pytest.CaptureFixture[str]) -> None:
+    assert cmd_http.run(parse("http", "http://10.0.0.1/")) == 2
     assert "gateway is required" in capsys.readouterr().err
 
 

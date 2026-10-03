@@ -25,7 +25,7 @@ from pyac.config import GatewayConfig
 from pyac.errors import PyacError
 from tests.fakegw import FakeGateway
 from tests.fakegw.server import DEFAULT_TUNNEL_HEADERS
-from tests.integration.test_get import auth_exchange
+from tests.integration.test_http import auth_exchange
 
 SERVER_IP = "10.11.12.13"
 TUNNEL_HEADERS = [(n, v) for n, v in DEFAULT_TUNNEL_HEADERS if n != "X-CSTP-Banner"]

@@ -21,7 +21,7 @@ from pyac.profile import load_profile
 
 MIN_BUFFER_KIB = 8
 
-# up, get, and direct-mode nc all use these exact attribute names.
+# up, http, and direct-mode nc all use these exact attribute names.
 CONNECT_PROFILE_FIELDS: tuple[str, ...] = (
     "gateway",
     "user",

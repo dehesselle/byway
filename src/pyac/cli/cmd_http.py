@@ -1,4 +1,4 @@
-"""``pyac get`` -- fetch one URL from inside the tunnel.
+"""``pyac http`` -- make one HTTP request from inside the tunnel.
 
 Everything the project has built is on this path: aggregate-auth, the CSTP
 tunnel, framing, the userspace IPv4 stack, a TCP connection, TLS over that
@@ -56,9 +56,9 @@ def register(
     shared: argparse.ArgumentParser,
 ) -> None:
     parser = subparsers.add_parser(
-        "get",
+        "http",
         parents=[shared],
-        help="fetch one URL through the tunnel",
+        help="make one HTTP request through the tunnel",
         description=(
             "Authenticate, bring the tunnel up, and make one HTTP or HTTPS request "
             "through the userspace TCP stack. The URL names an IP address, or a "
@@ -100,7 +100,16 @@ def register(
         help="per-socket send and receive buffer in KiB (default 1024); one "
         "connection cannot exceed buffer/RTT, so raise it for a distant gateway",
     )
-    parser.add_argument("-X", "--method", default="GET", help="HTTP method (default GET)")
+    parser.add_argument(
+        "-X", "--method", help="HTTP method (default GET, or POST when -d is given)"
+    )
+    parser.add_argument(
+        "-d",
+        "--data",
+        metavar="DATA",
+        help="request body: the text itself, @FILE for a file's contents, or @- for "
+        "stdin; sent byte for byte, with no Content-Type implied",
+    )
     parser.add_argument(
         "-H",
         "--header",
@@ -191,6 +200,24 @@ def parse_header(raw: str) -> tuple[str, str]:
     return name.strip(), value.strip()
 
 
+def read_body(raw: str | None) -> bytes | None:
+    """The request body ``-d`` names, read in full. Raises :class:`OSError`."""
+    if raw is None:
+        return None
+    if raw == "@-":
+        return sys.stdin.buffer.read()
+    if raw.startswith("@"):
+        with open(raw[1:], "rb") as handle:
+            return handle.read()
+    return raw.encode("utf-8")
+
+
+def request_method(args: argparse.Namespace) -> str:
+    if args.method:
+        return str(args.method).upper()
+    return "POST" if args.data is not None else "GET"
+
+
 def tls_name(args: argparse.Namespace, headers: list[tuple[str, str]]) -> str | None:
     """Which name the target's certificate should be checked against.
 
@@ -233,6 +260,9 @@ def run(args: argparse.Namespace) -> int:
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
+    if args.data == "@-" and args.password_stdin:
+        print("error: -d @- and --password-stdin both read stdin; use one", file=sys.stderr)
+        return 2
 
     try:
         apply_profile(args)
@@ -254,6 +284,11 @@ def run(args: argparse.Namespace) -> int:
     if not args.user:
         print("error: -u/--user is required (pass it directly, or via --profile)", file=sys.stderr)
         return 2
+    try:
+        body = read_body(args.data)  # before authenticating, like the name check
+    except OSError as exc:
+        print(f"error: cannot read the request body: {exc}", file=sys.stderr)
+        return 2
 
     gateway = parse_gateway(args.gateway, pin=args.pin, no_verify=args.no_verify)
     try:
@@ -265,7 +300,7 @@ def run(args: argparse.Namespace) -> int:
     except KeyboardInterrupt:
         return 130
     try:
-        return asyncio.run(_run(args, gateway, credentials, target, headers, resolver))
+        return asyncio.run(_run(args, gateway, credentials, target, headers, resolver, body))
     except KeyboardInterrupt:
         return 130
     except PyacError as exc:
@@ -280,6 +315,7 @@ async def _run(
     target: Target,
     headers: list[tuple[str, str]],
     resolver: StaticResolver | None = None,
+    body: bytes | None = None,
 ) -> int:
     resolver = resolver or StaticResolver({})
     address = resolver.resolve(target.host)
@@ -316,7 +352,7 @@ async def _run(
         driver = Driver(session, buffer=buffer_bytes(args), resolver=resolver)
         driver.start()
         try:
-            response, timing = await _fetch(driver, target, args, headers)
+            response, timing = await _fetch(driver, target, args, headers, body)
         finally:
             await driver.aclose()
     finally:
@@ -340,6 +376,7 @@ async def _fetch(
     target: Target,
     args: argparse.Namespace,
     headers: list[tuple[str, str]],
+    body: bytes | None = None,
 ) -> tuple[httpx.Response, Timing]:
     print(f"connecting to {target.host}:{target.port}...", file=sys.stderr)
     # verify goes on the transport, not the client: httpx only applies its own
@@ -356,9 +393,10 @@ async def _fetch(
     ) as client:
         name = tls_name(args, headers)
         response = await client.request(
-            args.method.upper(),
+            request_method(args),
             target.url,
             headers=headers or None,
+            content=body,
             extensions={"sni_hostname": name} if name else {},
         )
         await response.aread()

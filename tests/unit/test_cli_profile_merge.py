@@ -108,12 +108,12 @@ def test_unknown_profile_name_is_a_pyac_error(tmp_path: Path) -> None:
         apply_profile(args)
 
 
-def test_profile_works_the_same_for_get_and_direct_mode_nc(tmp_path: Path) -> None:
+def test_profile_works_the_same_for_http_and_direct_mode_nc(tmp_path: Path) -> None:
     path = write_profile(tmp_path, '[profiles.work]\ngateway = "vpn.example.com"\nuser = "jdoe"\n')
 
-    get_args = parse("--config", str(path), "get", "--profile", "work", "http://10.0.0.1/")
-    apply_profile(get_args)
-    assert (get_args.gateway, get_args.user) == ("vpn.example.com", "jdoe")
+    http_args = parse("--config", str(path), "http", "--profile", "work", "http://10.0.0.1/")
+    apply_profile(http_args)
+    assert (http_args.gateway, http_args.user) == ("vpn.example.com", "jdoe")
 
     nc_args = parse("--config", str(path), "nc", "--profile", "work", "10.0.0.1", "22")
     apply_profile(nc_args)
@@ -198,13 +198,13 @@ def test_add_host_adds_to_and_overrides_the_profile_table(tmp_path: Path) -> Non
 
 
 def test_add_host_works_without_a_profile() -> None:
-    args = parse("get", "gw", "http://web/", "--add-host", "web=10.0.0.5")
+    args = parse("http", "gw", "http://web/", "--add-host", "web=10.0.0.5")
     assert host_resolver(args).resolve("web") == "10.0.0.5"
 
 
 def test_an_unknown_name_says_where_names_come_from(tmp_path: Path) -> None:
     path = write_profile(tmp_path, HOSTS_PROFILE)
-    args = parse("--config", str(path), "get", "--profile", "orka", "http://other/")
+    args = parse("--config", str(path), "http", "--profile", "orka", "http://other/")
     apply_profile(args)
     with pytest.raises(PyacError, match=r"\[profiles\.orka\.hosts\] or --add-host"):
         host_resolver(args).resolve("other")

@@ -1,4 +1,4 @@
-"""``pyac get`` against the fake gateway: every layer at once.
+"""``pyac http`` against the fake gateway: every layer at once.
 
 Aggregate-auth, ``CONNECT``, CSTP framing, the userspace IPv4 stack, the TCP
 state machine, and an HTTP request served by a peer sitting behind the tunnel.
@@ -19,7 +19,7 @@ from usernet.net.tcp import Flag, parse_tcp
 from usernet.resolve import StaticResolver
 from usernet.testing.peer import TcpPeer, http_handler
 
-from pyac.cli.cmd_get import Target, _run
+from pyac.cli.cmd_http import Target, _run
 from pyac.config import Credentials, GatewayConfig
 from pyac.errors import ConnectionTimeout, RouteNotAllowed
 from tests.fakegw import FakeGateway
@@ -52,7 +52,8 @@ def options(**overrides: object) -> argparse.Namespace:
         "pcap": None,
         "json": False,
         "mtu": None,
-        "method": "GET",
+        "method": None,
+        "data": None,
         "header": [],
         "output": None,
         "timeout": 10.0,
@@ -134,6 +135,34 @@ async def test_the_request_reaches_the_server_intact(certs: Path) -> None:
     # No `Connection: close`: since M7 the request is httpx's, and it keeps the
     # connection alive. The response is framed by Content-Length, not by EOF.
     assert b"connection: close" not in request.lower()
+
+
+async def test_a_body_is_posted_byte_for_byte(certs: Path) -> None:
+    """What a REST call needs: the body, its length, and the caller's type."""
+    body = b'{"name": "thing", "tags": ["a", "b"]}'
+    peer = TcpPeer(ip=SERVER_IP, port=80, handler=http_handler(b"created"))
+    headers = [(name, value) for name, value in DEFAULT_TUNNEL_HEADERS if name != "X-CSTP-Banner"]
+    async with FakeGateway(
+        auth_exchange(), certs_dir=certs, peer=peer, tunnel_headers=headers
+    ) as gateway:
+        config = GatewayConfig(host="127.0.0.1", port=gateway.port, verify=gateway.ca_path)
+        result = await _run(
+            options(data="(read by run)"),
+            config,
+            Credentials(username="alice", password="hunter2"),
+            Target(host=SERVER_IP, port=80, path="/v1/things"),
+            [("Content-Type", "application/json")],
+            StaticResolver({}),
+            body,
+        )
+
+    assert result == 0
+    (connection,) = peer.connections.values()
+    request = bytes(connection.received)
+    assert request.startswith(b"POST /v1/things HTTP/1.1\r\n")
+    assert b"content-type: application/json\r\n" in request.lower()
+    assert f"content-length: {len(body)}\r\n".encode() in request.lower()
+    assert request.endswith(b"\r\n\r\n" + body)
 
 
 async def test_a_body_larger_than_one_segment_arrives_whole(certs: Path, tmp_path: Path) -> None:
