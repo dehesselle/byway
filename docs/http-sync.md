@@ -72,7 +72,7 @@ $ pyac up vpn.corp.example -u rene --socks
 $ curl --socks5 127.0.0.1:1080 http://10.221.188.20/v1/things
 ```
 
-This is `vpn.serve_socks5()` under the hood (see the README); it stays
+This is `vpn.serve_socks5()` under the hood (see [MANUAL.md](MANUAL.md#library)); it stays
 async-only as a library call, since every existing caller of it either is
 already async or reaches it through the CLI.
 

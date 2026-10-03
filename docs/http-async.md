@@ -29,7 +29,7 @@ know `requests`, there is nothing new to learn here beyond `await`.
   required by `pyac`; the sync path (see [http-sync.md](http-sync.md)) needs
   a dedicated thread to bridge blocking calls onto an event loop.
 - Flow control composes for free — the same backpressure guarantee the rest
-  of the API gives (see the README).
+  of the API gives (see [DESIGN.md](DESIGN.md#core-principles)).
 
 Use `vpn.httpx_transport()` instead if you need to plug the tunnel into your
 own `httpx.Client`/`AsyncClient` construction (custom headers, auth, base
