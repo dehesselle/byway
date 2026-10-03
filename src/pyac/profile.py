@@ -8,10 +8,11 @@ introduces no import cycle.
 from __future__ import annotations
 
 import tomllib
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 
 import platformdirs
+from usernet.resolve import StaticResolver
 
 from pyac.errors import PyacError
 
@@ -30,6 +31,8 @@ class Profile:
     mtu: int | None = None
     buffer: int | None = None
     route_policy: str | None = None
+    hosts: dict[str, str] = field(default_factory=dict)
+    """``[profiles.<name>.hosts]``: names resolved inside the tunnel, ``name = "ip"``."""
 
 
 _FIELD_NAMES = {f.name for f in fields(Profile)}
@@ -87,10 +90,30 @@ def _parse_profile(path: Path, name: str, table: object) -> Profile:
         raise PyacError(f"{path}: [profiles.{name}] has unknown key(s): {keys}")
     if "route_policy" in table and table["route_policy"] not in _ROUTE_POLICIES:
         raise PyacError(f"{path}: [profiles.{name}].route_policy must be one of {_ROUTE_POLICIES}")
+    if "hosts" in table:
+        _check_hosts(path, name, table["hosts"])
     try:
         return Profile(**table)
     except TypeError as exc:
         raise PyacError(f"{path}: [profiles.{name}]: {exc}") from exc
+
+
+def _check_hosts(path: Path, name: str, hosts: object) -> None:
+    section = f"[profiles.{name}.hosts]"
+    if not isinstance(hosts, dict):
+        raise PyacError(f'{path}: {section} must be a table of name = "address"')
+    for host, address in hosts.items():
+        if not isinstance(address, str):
+            # The usual cause: an unquoted dotted key, which TOML reads as
+            # nested tables rather than as one name.
+            raise PyacError(
+                f"{path}: {section}: {host!r} must map to an address string; "
+                f'quote names that contain dots, e.g. "node-1.orka" = "10.0.0.11"'
+            )
+    try:
+        StaticResolver(hosts, source=f"{path}: {section}")
+    except ValueError as exc:
+        raise PyacError(str(exc)) from None
 
 
 def password_from_keyring(target: str, username: str) -> str | None:

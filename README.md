@@ -43,8 +43,8 @@ async with pyac.connect("vpn.corp.example", user, password) as vpn:
         response = await http.get("http://10.221.188.20/v1/things")
 ```
 
-**Hosts must be IP addresses**: there is no in-tunnel DNS resolver. IPv4, TLS, outbound TCP
-and username/password authentication only.
+**Hosts are IP addresses, or names from a fixed table** in the profile: there is no
+in-tunnel DNS. IPv4, TLS, outbound TCP and username/password authentication only.
 
 **Check your policy first.** Many organisations require a sanctioned VPN client, and pyac
 bypasses posture assessment (CSD/HostScan) entirely. Check that you are allowed to use it

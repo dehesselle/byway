@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pytest
 import pytest_asyncio
+from usernet.resolve import StaticResolver
 from usernet.runtime.driver import Driver
 from usernet.socks import Socks5Server
 from usernet.socks.protocol import (
@@ -54,6 +55,7 @@ async def proxy_for(
     certs: Path,
     body: bytes = b"hello from inside",
     port: int = 80,
+    hosts: dict[str, str] | None = None,
     **options: object,
 ) -> AsyncIterator[tuple[Socks5Server, TcpPeer]]:
     peer = TcpPeer(ip=SERVER_IP, port=port, handler=http_handler(body))
@@ -61,7 +63,10 @@ async def proxy_for(
         FakeGateway([], certs_dir=certs, peer=peer, tunnel_headers=TUNNEL_HEADERS) as gateway,
         session_for(gateway) as session,
     ):
-        driver = Driver(session)
+        # As `pyac up` builds it: the host table on the driver, and the proxy
+        # picking it up from there.
+        resolver = StaticResolver(hosts) if hosts is not None else None
+        driver = Driver(session, resolver=resolver)
         driver.start()
         server = Socks5Server(driver, port=0, **options)  # type: ignore[arg-type]
         await server.start()
@@ -240,6 +245,38 @@ async def test_a_hostname_is_refused_because_there_is_no_resolver(
     writer.close()
 
     assert reply is Reply.HOST_UNREACHABLE
+
+
+async def test_a_hostname_in_the_host_table_is_connected_to(certs: Path) -> None:
+    """`--socks5-hostname` against a gateway with no DNS: the table answers."""
+    async with proxy_for(certs, hosts={"node-1.orka": SERVER_IP}) as (server, _peer):
+        reader, writer, _method = await greet(server)
+        reply, _bound, _port = await request(reader, writer, host="node-1.orka", atyp=ATYP_DOMAIN)
+        writer.close()
+
+    assert reply is Reply.SUCCESS
+
+
+async def test_a_hostname_missing_from_the_table_is_still_refused(certs: Path) -> None:
+    """Never a fallback to the host's DNS, table or no table."""
+    async with proxy_for(certs, hosts={"node-1.orka": SERVER_IP}) as (server, _peer):
+        reader, writer, _method = await greet(server)
+        reply, _bound, _port = await request(reader, writer, host="node-2.orka", atyp=ATYP_DOMAIN)
+        writer.close()
+
+    assert reply is Reply.HOST_UNREACHABLE
+
+
+async def test_a_table_entry_outside_the_routes_is_not_allowed(certs: Path) -> None:
+    """Routing is checked against the address, so a name cannot smuggle one past it."""
+    async with proxy_for(certs, hosts={"public.example": OUTSIDE_IP}) as (server, _peer):
+        reader, writer, _method = await greet(server)
+        reply, _bound, _port = await request(
+            reader, writer, host="public.example", atyp=ATYP_DOMAIN
+        )
+        writer.close()
+
+    assert reply is Reply.NOT_ALLOWED
 
 
 async def test_an_address_sent_as_a_hostname_still_works(

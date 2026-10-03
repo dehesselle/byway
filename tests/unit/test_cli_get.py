@@ -36,10 +36,15 @@ def test_the_scheme_may_be_omitted() -> None:
     assert parse_url("10.221.188.32/health").path == "/health"
 
 
-def test_a_hostname_is_refused_with_the_reason() -> None:
-    """No in-tunnel resolver, and the host's would leak the name."""
-    with pytest.raises(ValueError, match="no in-tunnel DNS resolver"):
-        parse_url("http://api.internal/v1")
+def test_a_hostname_is_kept_for_the_host_table_to_resolve() -> None:
+    target = parse_url("https://api.orka/v1")
+    assert (target.host, target.port) == ("api.orka", 443)
+    assert target.url == "https://api.orka/v1"
+
+
+def test_a_url_without_a_host_is_refused() -> None:
+    with pytest.raises(ValueError, match="names no host"):
+        parse_url("http:///v1")
 
 
 def test_an_unknown_scheme_is_refused() -> None:

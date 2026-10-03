@@ -10,9 +10,10 @@ reconnecting link, the driver, the transport bridge -- so this module carries
 no protocol logic of its own. That is deliberate: the CLI and the API run the
 same code, and neither is a reimplementation of the other.
 
-**Addresses, not names.** There is no in-tunnel resolver, so every host
-argument here is an IPv4 address. See ``resolve`` below for why, and why a
-method that quietly used the host's DNS would be worse than none.
+**Addresses, or names from a fixed table.** There is no in-tunnel DNS, so a
+host argument is an IPv4 address or a name from the ``hosts`` table given to
+:func:`connect`. See ``resolve`` below for why a method that quietly used the
+host's DNS would be worse than none.
 """
 
 from __future__ import annotations
@@ -20,11 +21,12 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import ssl
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping
 from typing import Any
 
 import httpx
 from usernet.http import TunnelTransport, httpx_client, httpx_transport
+from usernet.resolve import StaticResolver
 from usernet.routing import describe_routes, route_allows
 from usernet.runtime.driver import Driver, TcpStream
 from usernet.runtime.tls import wrap as wrap_tls
@@ -36,7 +38,6 @@ from pyac.config import DEFAULT_USER_AGENT, Credentials, GatewayConfig
 from pyac.cstp.config import TunnelConfig
 from pyac.cstp.link import ReconnectingLink
 from pyac.cstp.session import CstpSession
-from pyac.errors import PyacError
 
 __all__ = [
     "Credentials",
@@ -118,9 +119,10 @@ class VpnClient:
     ) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
         """The same, with TLS negotiated inside the tunnel.
 
-        ``server_hostname`` usually has to be given explicitly. Certificates
-        are issued for names while everything here is addressed by IP, so
-        verification fails on a mismatch unless you say which name to expect.
+        Connecting by a name from the ``hosts`` table checks the certificate
+        against that name. Connecting by address needs ``server_hostname``:
+        certificates are issued for names, so verification fails on a mismatch
+        unless you say which name to expect.
 
         This trust decision has nothing to do with the gateway's certificate;
         the two are deliberately separate.
@@ -167,18 +169,15 @@ class VpnClient:
         return results
 
     async def resolve(self, name: str) -> list[str]:
-        """Not available, and deliberately not faked.
+        """The address for ``name`` from the ``hosts`` table, and nothing else.
 
-        There is no in-tunnel resolver: the gateways seen so far advertise no
-        DNS servers, so there is nothing to resolve against. Falling back to
-        the host's resolver would leak internal hostnames to whatever DNS the
-        machine happens to use, and would resolve them to the wrong answers
-        besides. Use addresses.
+        There is no in-tunnel DNS: the gateways seen so far advertise no DNS
+        servers, so there is nothing to ask. Falling back to the host's
+        resolver would leak internal hostnames to whatever DNS the machine
+        happens to use, and would resolve them to the wrong answers besides.
+        A name missing from the table raises :class:`~pyac.errors.ResolveError`.
         """
-        raise PyacError(
-            f"cannot resolve {name!r}: pyac has no in-tunnel resolver, and using the "
-            f"host's would leak internal names outside the VPN. Use an IP address."
-        )
+        return [await self._driver.resolve(name)]
 
     # --- HTTP ----------------------------------------------------------------
 
@@ -258,6 +257,7 @@ async def connect(
     mtu: int = DEFAULT_MTU,
     buffer: int | None = None,
     reconnect: bool = True,
+    hosts: Mapping[str, str] | None = None,
 ) -> AsyncIterator[VpnClient]:
     """Authenticate, bring the tunnel up, and tear it down again afterwards.
 
@@ -269,7 +269,14 @@ async def connect(
     ``buffer`` is the per-socket send and receive buffer in bytes. One
     connection cannot exceed ``buffer / RTT``, so a distant gateway is the
     reason to raise it.
+
+    ``hosts`` maps names to addresses inside the tunnel, like ``/etc/hosts``
+    for this one connection: ``{"node-1.orka": "10.221.188.11"}``. Every
+    method taking a host, and the SOCKS proxy, resolves names from it and
+    refuses the rest. Raises :class:`ValueError` for a malformed table, before
+    authenticating.
     """
+    resolver = StaticResolver(hosts or {}, source="the hosts table given to pyac.connect()")
     config = (
         gateway
         if isinstance(gateway, GatewayConfig)
@@ -302,7 +309,7 @@ async def connect(
 
     link = ReconnectingLink(open_session, reconnect=reconnect)
     await link.start()
-    driver = Driver(link, buffer=buffer)
+    driver = Driver(link, buffer=buffer, resolver=resolver)
     driver.start()
     client = VpnClient(link, driver)
     try:

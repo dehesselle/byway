@@ -26,7 +26,13 @@ from usernet.socks import Socks5Server
 
 from pyac._logging import configure as configure_logging
 from pyac.auth.client import authenticate, build_ssl_context, logout
-from pyac.cli import apply_profile, buffer_bytes, finalize_route_policy
+from pyac.cli import (
+    add_host_argument,
+    apply_profile,
+    buffer_bytes,
+    finalize_route_policy,
+    host_resolver,
+)
 from pyac.cli.cmd_probe import parse_gateway
 from pyac.cli.dashboard import Sources, dashboard
 from pyac.cli.dashboard import wanted as wants_dashboard
@@ -155,6 +161,7 @@ def register(
         action="store_true",
         help="plain output only, even on a terminal (the live panel is shown by default)",
     )
+    add_host_argument(parser)
     parser.set_defaults(handler=run)
 
 
@@ -302,6 +309,15 @@ def run(args: argparse.Namespace) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     finalize_route_policy(args)
+    try:
+        # Before the login: a malformed --add-host, or a keepalive name that is
+        # not in the table, would otherwise surface only much later.
+        resolver = host_resolver(args)
+        if args.keepalive:
+            resolver.resolve(args.keepalive)
+    except PyacError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
     if not args.gateway:
         print("error: gateway is required (pass it directly, or via --profile)", file=sys.stderr)
         return 2
@@ -431,7 +447,8 @@ async def _serve_socks(link: ReconnectingLink, args: argparse.Namespace, sources
     host, port = parse_listen(args.socks)
     username, password = parse_socks_auth(args.socks_auth)
 
-    driver = Driver(link, buffer=buffer_bytes(args))
+    resolver = host_resolver(args)
+    driver = Driver(link, buffer=buffer_bytes(args), resolver=resolver)
     driver.start()
     proxy = Socks5Server(
         driver,
@@ -450,7 +467,13 @@ async def _serve_socks(link: ReconnectingLink, args: argparse.Namespace, sources
             # Loopback still means every local process, including a browser
             # tab running someone else's JavaScript.
             print("          no authentication: any local process can use this")
-        print(f"\ncurl --socks5 {proxy.address} http://<ip-inside-the-vpn>/")
+        if resolver.hosts:
+            count = len(resolver.hosts)
+            print(f"hosts     {count} name{'s' if count != 1 else ''} from the host table")
+            example = next(iter(resolver.hosts))
+            print(f"\ncurl --socks5-hostname {proxy.address} http://{example}/")
+        else:
+            print(f"\ncurl --socks5 {proxy.address} http://<ip-inside-the-vpn>/")
         print("\npress Ctrl-C to disconnect")
 
         keeper = None

@@ -37,6 +37,7 @@ Options valid for every command, placed before or after it:
 | `--mtu MTU` | Override the MTU requested of the gateway. |
 | `--buffer KIB` | Per-socket send and receive buffer, default 1024. See [OPERATIONS.md](OPERATIONS.md#throughput). |
 | `--route-policy auto\|all` | `auto` refuses addresses outside the routes the gateway advertised; `all` tries anyway. |
+| `--add-host NAME=ADDR` | Resolve NAME to ADDR inside the tunnel; repeatable. See [Host names](#host-names). |
 
 ## Bringing the tunnel up
 
@@ -58,7 +59,7 @@ SOCKS connection. Output that is piped or redirected stays plain, and so does
 | `--socks [[HOST:]PORT]` | Serve SOCKS5, default `127.0.0.1:1080`. |
 | `--socks-auth USER:PASS` | Require RFC 1929 credentials from SOCKS clients. |
 | `--socks-allow-remote` | Permit a non-loopback SOCKS address. This opens the VPN to the network. |
-| `--keepalive HOST` | Ping HOST inside the VPN so the gateway's idle timeout never fires. See [OPERATIONS.md](OPERATIONS.md#idle-timeout). |
+| `--keepalive HOST` | Ping HOST (an address or a name from the [host table](#host-names)) inside the VPN so the gateway's idle timeout never fires. See [OPERATIONS.md](OPERATIONS.md#idle-timeout). |
 | `--keepalive-interval SECONDS` | Default 300. |
 | `--no-reconnect` | Exit when the tunnel ends instead of rebuilding it. |
 | `--no-dashboard` | Plain output even on a terminal. |
@@ -72,8 +73,8 @@ Diagnostics only:
 | `--no-client-dpd` | Answer the gateway's DPD but never send our own. |
 | `--coalesce` | Batch frames into one TLS record. Known to break Cisco ASA; see [protocol.md](protocol.md#one-frame-per-tls-record--mandatory). |
 
-SOCKS5 does not resolve names: `--socks5-hostname` and `socks5h://` are rejected, see
-[DESIGN.md](DESIGN.md#deliberate-omissions).
+SOCKS5 resolves names only from the [host table](#host-names); any other name sent with
+`--socks5-hostname` or `socks5h://` is rejected.
 
 ## Reaching hosts
 
@@ -98,8 +99,50 @@ pyac get vpn.corp.example -u rene -X POST -H "Content-Type: application/json" ht
 It takes `-X METHOD`, `-H "NAME: VALUE"` (repeatable), `-o FILE`, `-L` to follow redirects
 and `--timeout SECONDS`. For HTTPS targets, `--cacert FILE` sets the CA bundle, `-k`
 skips verification of the *target* (unlike `--no-verify`, which is about the gateway), and
-`--tls-name NAME` sets the name for SNI and certificate verification. It defaults to the
-`Host` header, since a certificate is issued for a name and pyac can only dial an address.
+`--tls-name NAME` sets the name for SNI and certificate verification when the URL names
+an address. It defaults to the `Host` header. A URL with a name from the
+[host table](#host-names) needs neither: the name is the one the certificate is checked
+against.
+
+## Host names
+
+There is no DNS inside the tunnel, so pyac resolves names from a fixed table you keep in the
+profile, like `/etc/hosts` for this one VPN:
+
+```toml
+[profiles.orka]
+gateway = "vpn.example.com"
+user = "rene"
+
+[profiles.orka.hosts]
+"node-1.orka" = "10.221.188.11"
+"api.orka" = "10.221.188.20"
+```
+
+Quote names that contain dots: TOML reads `node-1.orka = ...` as nested tables, and pyac
+refuses that with a hint. `--add-host NAME=ADDR` (repeatable) adds entries on the command line
+and overrides the profile's for the same name.
+
+With the table in place, names work wherever an address does:
+
+```sh
+pyac up --profile orka --socks
+curl --socks5-hostname 127.0.0.1:1080 http://api.orka/
+ssh -o ProxyCommand="pyac nc --via 1080 %h %p" admin@node-1.orka
+pyac get --profile orka https://api.orka/v1/status
+```
+
+Use `--socks5-hostname` (curl) or `socks5h://`, so the name reaches pyac. With plain
+`--socks5`, the client asks the machine's DNS, which leaks the name and usually fails.
+`nc --via` sends the name to the proxy, so the table that counts is the one `pyac up` loaded.
+
+Matching is exact and ignores case and a trailing dot. There are no wildcards and no search
+domain. A name missing from the table is refused with a message saying where names come
+from. It is never sent to the machine's DNS. `get` and direct-mode `nc` refuse it before
+authenticating. The split-route check applies to the address a name maps to.
+
+The table is static. A wrong entry connects to the wrong machine, which TLS verification or
+SSH host keys will catch and plain HTTP will not.
 
 ## Gateway certificates
 
@@ -147,6 +190,9 @@ pin = "sha256:deadbeef..."
 # mtu = 1400
 # buffer = 2048
 # route_policy = "all"
+
+# [profiles.work.hosts]           # see Host names
+# "intranet.corp" = "10.221.188.20"
 ```
 
 Only `gateway` is required; unknown keys are an error. `pyac up --profile work` then behaves
@@ -181,6 +227,10 @@ async with pyac.connect("vpn.corp.example", user, password) as vpn:
 `verify`, `server_cert_pin`, `mtu`, `buffer`, `reconnect`, …). Leaving the block closes the
 tunnel *and* posts the logout; see [DESIGN.md](DESIGN.md#core-principles) for why that
 matters.
+
+`hosts={"api.orka": "10.221.188.20"}` is the [host table](#host-names): every method that
+takes a host, `httpx_client()`, `serve_socks5()` and `vpn.resolve()` use it, and refuse any
+other name.
 
 - `open_connection()` and `open_tls_connection()` return stdlib streams. Flow control
   composes with them; see [DESIGN.md](DESIGN.md#core-principles).

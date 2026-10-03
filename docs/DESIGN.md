@@ -40,9 +40,12 @@ address it was assigned. `ReconnectingLink` is this project's implementation of 
 5. **One CSTP frame per TLS record.** A Cisco ASA hangs up on anything else; see
    [protocol.md](protocol.md#one-frame-per-tls-record--mandatory). `--coalesce` exists for
    experiments only and must never be the default.
-6. **Refuse names rather than leak them.** With no in-tunnel resolver, falling back to the
-   host's resolver would send internal hostnames to whatever DNS the machine uses, so
-   SOCKS5 rejects names and `vpn.resolve()` explains why instead of faking it.
+6. **Names come from the tunnel's host table or nowhere.** Falling back to the host's
+   resolver would send internal hostnames to whatever DNS the machine uses. A name is
+   resolved from a static table (the profile's `hosts`, `--add-host`, or `hosts=` in the
+   API) and refused otherwise, everywhere: SOCKS5, `get`, `nc` and the library. The table
+   is a `usernet.resolve.StaticResolver` on the driver, so every consumer gets the same
+   answer, and routing is checked against the address, not the name.
 7. **Streams are real stdlib streams, and backpressure reaches the peer.**
    `StreamReader`'s high-water mark calls `pause_reading()`, which stops us draining the
    stack, which shrinks the advertised window, which stops the far end sending — without a
@@ -53,9 +56,12 @@ address it was assigned. `ReconnectingLink` is this project's implementation of 
 
 ## Deliberate omissions
 
-- **No in-tunnel DNS resolver.** The gateway this was developed against advertises no DNS
-  servers at all, so there is nothing to resolve against. On a gateway that does advertise
-  them, this becomes implementable.
+- **No DNS client, a static host table only.** The gateway this was developed against
+  advertises no DNS servers at all, so there is nothing to ask, and the machines behind it
+  have fixed addresses. The table matches names exactly: no wildcards, no search domain, no
+  reverse lookups. Querying a DNS server would also need UDP, which pyac does not carry. On
+  a gateway that does advertise DNS servers, a resolver using them could take the table's
+  place on the driver.
 - **No compression.** pyac does not advertise `X-CSTP-Accept-Encoding`, so LZS, LZ4 and
   deflate never need implementing. A compressed frame arriving anyway is a loud error.
 - **TLS only, no DTLS.** Everything rides the TLS connection.

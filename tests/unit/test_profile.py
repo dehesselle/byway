@@ -196,3 +196,53 @@ def test_keyring_backend_errors_are_wrapped(monkeypatch: pytest.MonkeyPatch) -> 
     install_fake_keyring(monkeypatch, raising)
     with pytest.raises(PyacError, match="keyring lookup"):
         password_from_keyring("work", "jdoe")
+
+
+# --- the hosts table -----------------------------------------------------------
+
+
+def test_a_hosts_table_is_read(tmp_path: Path) -> None:
+    path = write(
+        tmp_path,
+        """
+        [profiles.orka]
+        gateway = "vpn.example.com"
+
+        [profiles.orka.hosts]
+        "node-1.orka" = "10.221.188.11"
+        api = "10.221.188.20"
+        """,
+    )
+    profile = load_profile("orka", path=path)
+    assert profile.hosts == {"node-1.orka": "10.221.188.11", "api": "10.221.188.20"}
+
+
+def test_no_hosts_table_means_an_empty_one(tmp_path: Path) -> None:
+    path = write(tmp_path, '[profiles.work]\ngateway = "vpn.example.com"\n')
+    assert load_profile("work", path=path).hosts == {}
+
+
+def test_an_unquoted_dotted_name_is_explained(tmp_path: Path) -> None:
+    """TOML reads ``node-1.orka = ...`` as nested tables, which is never what
+    anyone writing a hosts table meant."""
+    path = write(
+        tmp_path,
+        '[profiles.orka]\ngateway = "gw"\n[profiles.orka.hosts]\nnode-1.orka = "10.0.0.1"\n',
+    )
+    with pytest.raises(PyacError, match=r"\[profiles\.orka\.hosts\].*quote names"):
+        load_profile("orka", path=path)
+
+
+def test_a_hosts_entry_that_is_not_an_address_is_refused(tmp_path: Path) -> None:
+    path = write(
+        tmp_path,
+        '[profiles.orka]\ngateway = "gw"\n[profiles.orka.hosts]\napi = "api.example"\n',
+    )
+    with pytest.raises(PyacError, match=r"config\.toml: \[profiles\.orka\.hosts\].*not an IPv4"):
+        load_profile("orka", path=path)
+
+
+def test_hosts_must_be_a_table(tmp_path: Path) -> None:
+    path = write(tmp_path, '[profiles.orka]\ngateway = "gw"\nhosts = "10.0.0.1"\n')
+    with pytest.raises(PyacError, match="must be a table"):
+        load_profile("orka", path=path)

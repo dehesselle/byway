@@ -16,6 +16,7 @@ from pathlib import Path
 import pytest
 from usernet.net.ipv4 import parse_ipv4
 from usernet.net.tcp import Flag, parse_tcp
+from usernet.resolve import StaticResolver
 from usernet.testing.peer import TcpPeer, http_handler
 
 from pyac.cli.cmd_get import Target, _run
@@ -67,6 +68,8 @@ def options(**overrides: object) -> argparse.Namespace:
 async def fetch(
     gateway: FakeGateway,
     path: str = "/",
+    host: str = SERVER_IP,
+    hosts: dict[str, str] | None = None,
     **overrides: object,
 ) -> int:
     config = GatewayConfig(host="127.0.0.1", port=gateway.port, verify=gateway.ca_path)
@@ -74,8 +77,9 @@ async def fetch(
         options(**overrides),
         config,
         Credentials(username="alice", password="hunter2"),
-        Target(host=SERVER_IP, port=80, path=path),
+        Target(host=host, port=80, path=path),
         [],
+        StaticResolver(hosts or {}),
     )
 
 
@@ -103,6 +107,16 @@ async def test_a_page_is_fetched_through_the_whole_stack(
 
     assert result == 0
     assert capsys.readouterr().out.endswith("it works from inside the vpn")
+
+
+async def test_a_name_from_the_host_table_is_fetched(
+    certs: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    async with serving(b"fetched by name", certs) as gateway:
+        result = await fetch(gateway, host="web.orka", hosts={"web.orka": SERVER_IP})
+
+    assert result == 0
+    assert capsys.readouterr().out.endswith("fetched by name")
 
 
 async def test_the_request_reaches_the_server_intact(certs: Path) -> None:
@@ -227,6 +241,11 @@ async def test_an_address_outside_the_split_routes_is_refused(certs: Path) -> No
     ) as gateway:
         with pytest.raises(RouteNotAllowed, match="outside the gateway's split routes"):
             await fetch(gateway)
+
+        # A name is checked by what it resolves to, and the message says both.
+        gateway.responses = auth_exchange()
+        with pytest.raises(RouteNotAllowed, match=rf"web\.orka \({SERVER_IP}\) is outside"):
+            await fetch(gateway, host="web.orka", hosts={"web.orka": SERVER_IP})
 
         # ...and the escape hatch really does bypass the check.
         gateway.responses = auth_exchange()

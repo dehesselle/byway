@@ -57,9 +57,10 @@ hanging or failing confusingly.
 
 ## The one caveat
 
-Same as the async path: pyac has no in-tunnel DNS resolver, so hosts must be
-IP addresses, not names. `http://10.221.188.20/...` works;
-`http://api.internal/...` will not.
+Same as the async path: hosts are IP addresses, or names from the `hosts`
+table passed to `connect_sync()` / `SyncVpnClient.connect()`. Any other name
+is refused rather than resolved by the machine's DNS. See
+[MANUAL.md](MANUAL.md#host-names).
 
 ## Non-Python processes
 

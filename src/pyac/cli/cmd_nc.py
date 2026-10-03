@@ -31,7 +31,13 @@ from usernet.socks.client import open_via_socks
 
 from pyac._logging import configure as configure_logging
 from pyac.auth.client import authenticate, build_ssl_context, logout
-from pyac.cli import apply_profile, buffer_bytes, finalize_route_policy
+from pyac.cli import (
+    add_host_argument,
+    apply_profile,
+    buffer_bytes,
+    finalize_route_policy,
+    host_resolver,
+)
 from pyac.cli.cmd_probe import parse_gateway
 from pyac.cli.cmd_up import parse_listen, parse_socks_auth, read_password
 from pyac.config import Credentials
@@ -52,7 +58,10 @@ def register(
             'use as an SSH ProxyCommand: ssh -o ProxyCommand="pyac nc --via 1080 %%h %%p"'
         ),
     )
-    parser.add_argument("host", help="address inside the VPN (not a name: there is no resolver)")
+    parser.add_argument(
+        "host",
+        help="address inside the VPN, or a name from the host table (the proxy's, with --via)",
+    )
     parser.add_argument("port", type=int, help="TCP port")
 
     parser.add_argument(
@@ -95,6 +104,7 @@ def register(
     parser.add_argument(
         "--timeout", type=float, default=30.0, help="seconds to wait for the connection"
     )
+    add_host_argument(parser)
     parser.set_defaults(handler=run)
 
 
@@ -212,6 +222,12 @@ def run(args: argparse.Namespace) -> int:
             "error: --profile has no effect with --via (nothing to authenticate)", file=sys.stderr
         )
         return 2
+    if args.via and args.add_host:
+        print(
+            "error: --add-host has no effect with --via (the proxy resolves names)",
+            file=sys.stderr,
+        )
+        return 2
     if args.via and args.gateway:
         print("error: pass exactly one of --via or --gateway", file=sys.stderr)
         return 2
@@ -225,6 +241,11 @@ def run(args: argparse.Namespace) -> int:
             print(f"error: {exc}", file=sys.stderr)
             return 1
         finalize_route_policy(args)
+        try:
+            args.address = host_resolver(args).resolve(args.host)
+        except PyacError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
         if not args.gateway:
             print(
                 "error: pass --gateway (directly or via --profile), or use --via", file=sys.stderr
@@ -294,7 +315,7 @@ async def _run_direct(args: argparse.Namespace) -> int:
     )
     try:
         config = await session.connect()
-        if args.route_policy == "auto" and not route_allows(config, args.host):
+        if args.route_policy == "auto" and not route_allows(config, args.address):
             raise RouteNotAllowed(
                 f"{args.host} is outside the gateway's split routes "
                 f"({describe_routes(config)}); packets would be discarded with no error"
@@ -304,7 +325,7 @@ async def _run_direct(args: argparse.Namespace) -> int:
         driver.start()
         stdio = StdioBridge()
         try:
-            stream = await driver.connect(args.host, args.port, timeout=args.timeout)
+            stream = await driver.connect(args.address, args.port, timeout=args.timeout)
             await bridge(TunnelRemote(stream), stdio)
         finally:
             stdio.close()

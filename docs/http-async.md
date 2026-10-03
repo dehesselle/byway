@@ -37,9 +37,19 @@ URL, etc.) rather than taking the one `httpx_client()` hands back.
 
 ## The one caveat
 
-pyac has no in-tunnel DNS resolver, so **hosts must be IP addresses**, not
-names — `vpn.resolve()` exists only to explain why it refuses to fake this.
-`http://10.221.188.20/...` works; `http://api.internal/...` will not.
+pyac has no in-tunnel DNS, so **hosts are IP addresses or names from the
+`hosts` table** passed to `pyac.connect()`. Nothing is ever asked of the
+machine's own DNS:
+
+```python
+async with pyac.connect(gateway, user, password, hosts={"api.internal": "10.221.188.20"}) as vpn:
+    async with vpn.httpx_client() as http:
+        response = await http.get("https://api.internal/v1/things")
+```
+
+With the name in the URL, TLS checks the certificate against it, as usual.
+Any name not in the table raises `ResolveError`. See
+[MANUAL.md](MANUAL.md#host-names).
 
 ## If your code isn't async
 

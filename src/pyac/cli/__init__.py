@@ -14,6 +14,9 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from usernet.resolve import StaticResolver
+
+from pyac.errors import PyacError
 from pyac.profile import load_profile
 
 MIN_BUFFER_KIB = 8
@@ -74,9 +77,46 @@ def apply_profile(
         if getattr(args, field, None) is None:
             setattr(args, field, getattr(profile, field))
     args.no_verify = bool(args.no_verify) or not profile.verify
+    args.profile_hosts = profile.hosts
 
 
 def finalize_route_policy(args: argparse.Namespace) -> None:
     """``--route-policy``'s real default, applied only after apply_profile ran."""
     if getattr(args, "route_policy", None) is None:
         args.route_policy = "auto"
+
+
+def add_host_argument(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--add-host",
+        action="append",
+        default=[],
+        metavar="NAME=ADDR",
+        help="resolve NAME to ADDR inside the tunnel; repeatable, adds to (and "
+        "overrides) the profile's [hosts] table",
+    )
+
+
+def host_resolver(args: argparse.Namespace) -> StaticResolver:
+    """The tunnel's name table: the profile's ``hosts``, then ``--add-host``.
+
+    Always a resolver, even an empty one, so that a name it does not know is
+    refused with a message saying where names come from -- never sent to the
+    host's DNS.
+    """
+    hosts = dict(getattr(args, "profile_hosts", {}))
+    for entry in getattr(args, "add_host", []):
+        name, separator, address = entry.partition("=")
+        if not separator:
+            raise PyacError(f"--add-host expects NAME=ADDR, got {entry!r}")
+        try:
+            StaticResolver({name: address}, source=f"--add-host {entry}")
+        except ValueError as exc:
+            raise PyacError(str(exc)) from None
+        hosts[name] = address
+    profile = getattr(args, "profile", None)
+    if profile:
+        source = f"the host table ([profiles.{profile}.hosts] or --add-host)"
+    else:
+        source = "the host table (add entries with --add-host NAME=ADDR or a profile)"
+    return StaticResolver(hosts, source=source)

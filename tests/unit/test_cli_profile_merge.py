@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from pyac.cli import apply_profile, finalize_route_policy
+from pyac.cli import apply_profile, finalize_route_policy, host_resolver
 from pyac.cli.main import build_parser
 from pyac.errors import PyacError
 
@@ -162,3 +162,59 @@ def test_profile_route_policy_survives_finalize(tmp_path: Path) -> None:
     apply_profile(args)
     finalize_route_policy(args)
     assert args.route_policy == "all"
+
+
+# --- the host table -------------------------------------------------------------
+
+
+HOSTS_PROFILE = """
+[profiles.orka]
+gateway = "vpn.example.com"
+
+[profiles.orka.hosts]
+"node-1.orka" = "10.0.0.11"
+"api.orka" = "10.0.0.20"
+"""
+
+
+def test_add_host_adds_to_and_overrides_the_profile_table(tmp_path: Path) -> None:
+    path = write_profile(tmp_path, HOSTS_PROFILE)
+    args = parse(
+        "--config",
+        str(path),
+        "up",
+        "--profile",
+        "orka",
+        "--add-host",
+        "API.orka=10.0.0.21",
+        "--add-host",
+        "node-2.orka=10.0.0.12",
+    )
+    apply_profile(args)
+    resolver = host_resolver(args)
+    assert resolver.lookup("node-1.orka") == "10.0.0.11"
+    assert resolver.lookup("node-2.orka") == "10.0.0.12"
+    assert resolver.lookup("api.orka") == "10.0.0.21"
+
+
+def test_add_host_works_without_a_profile() -> None:
+    args = parse("get", "gw", "http://web/", "--add-host", "web=10.0.0.5")
+    assert host_resolver(args).resolve("web") == "10.0.0.5"
+
+
+def test_an_unknown_name_says_where_names_come_from(tmp_path: Path) -> None:
+    path = write_profile(tmp_path, HOSTS_PROFILE)
+    args = parse("--config", str(path), "get", "--profile", "orka", "http://other/")
+    apply_profile(args)
+    with pytest.raises(PyacError, match=r"\[profiles\.orka\.hosts\] or --add-host"):
+        host_resolver(args).resolve("other")
+
+
+@pytest.mark.parametrize(
+    ("entry", "message"),
+    [("web", "expects NAME=ADDR"), ("web=nowhere", "not an IPv4 address")],
+)
+def test_a_malformed_add_host_is_refused(entry: str, message: str) -> None:
+    args = parse("up", "gw", "--add-host", entry)
+    with pytest.raises(PyacError, match=message):
+        host_resolver(args)

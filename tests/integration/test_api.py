@@ -19,6 +19,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import pytest
+from usernet.resolve import StaticResolver
 from usernet.runtime.driver import Driver
 from usernet.testing.peer import TcpPeer, http_handler
 
@@ -27,7 +28,7 @@ from pyac.api import VpnClient
 from pyac.config import GatewayConfig
 from pyac.cstp.link import ReconnectingLink
 from pyac.cstp.session import CstpSession
-from pyac.errors import NetworkError, PyacError
+from pyac.errors import NetworkError, PyacError, ResolveError
 from tests.fakegw import FakeGateway
 from tests.fakegw.server import DEFAULT_TUNNEL_HEADERS
 from tests.integration.test_get import auth_exchange
@@ -42,7 +43,9 @@ def certs(tmp_path: Path) -> Path:
 
 
 @asynccontextmanager
-async def client_for(gateway: FakeGateway) -> AsyncIterator[VpnClient]:
+async def client_for(
+    gateway: FakeGateway, hosts: dict[str, str] | None = None
+) -> AsyncIterator[VpnClient]:
     """A VpnClient over the fake gateway, without going through auth.
 
     ``connect`` covers the authenticated path; this covers everything above it,
@@ -64,7 +67,7 @@ async def client_for(gateway: FakeGateway) -> AsyncIterator[VpnClient]:
 
     link = ReconnectingLink(open_session, reconnect=False)
     await link.start()
-    driver = Driver(link)
+    driver = Driver(link, resolver=StaticResolver(hosts) if hosts is not None else None)
     driver.start()
     client = VpnClient(link, driver)
     try:
@@ -180,8 +183,33 @@ async def test_resolve_refuses_rather_than_using_the_host_resolver(certs: Path) 
     """Silently resolving through the machine's DNS would leak internal names
     outside the VPN and return the wrong answers -- worse than not offering it."""
     async with serving(b"x", certs) as gateway, client_for(gateway) as vpn:
-        with pytest.raises(PyacError, match="no in-tunnel resolver"):
+        with pytest.raises(PyacError, match="never sent to the host's"):
             await vpn.resolve("intranet.corp")
+
+
+async def test_a_name_from_the_hosts_table_resolves_and_connects(certs: Path) -> None:
+    hosts = {"node-1.orka": SERVER_IP}
+    async with serving(b"by name", certs) as gateway, client_for(gateway, hosts) as vpn:
+        assert await vpn.resolve("Node-1.orka.") == [SERVER_IP]
+        reader, writer = await vpn.open_connection("node-1.orka", 80, timeout=10)
+        writer.write(b"GET / HTTP/1.1\r\n\r\n")
+        await writer.drain()
+        assert (await asyncio.wait_for(reader.read(), timeout=10)).endswith(b"by name")
+        writer.close()
+
+
+async def test_http_reaches_a_name_from_the_hosts_table(certs: Path) -> None:
+    hosts = {"api.orka": SERVER_IP}
+    async with serving(b"http by name", certs) as gateway, client_for(gateway, hosts) as vpn:
+        async with vpn.httpx_client() as http:
+            response = await http.get("http://api.orka/")
+        assert response.text == "http by name"
+
+
+async def test_a_name_missing_from_the_table_is_refused(certs: Path) -> None:
+    async with serving(b"x", certs) as gateway, client_for(gateway, {"a": SERVER_IP}) as vpn:
+        with pytest.raises(ResolveError, match="not in the host table"):
+            await vpn.open_connection("b", 80, timeout=2)
 
 
 # --- the authenticated path ---------------------------------------------------
@@ -224,6 +252,20 @@ async def test_connect_logs_out_even_when_the_body_raises(certs: Path) -> None:
                 raise RuntimeError("boom")
 
     assert any("logout" in request.target for request in gateway.requests)
+
+
+async def test_connect_refuses_a_bad_hosts_table_before_authenticating(certs: Path) -> None:
+    async with FakeGateway(
+        auth_exchange(), certs_dir=certs, tunnel_headers=TUNNEL_HEADERS
+    ) as gateway:
+        config = GatewayConfig(
+            host="127.0.0.1", port=gateway.port, verify=gateway.ca_path, user_agent="test"
+        )
+        with pytest.raises(ValueError, match="not an IPv4 address"):
+            async with pyac.connect(config, "rene", "secret", hosts={"a": "nowhere"}):
+                pass
+
+    assert gateway.requests == []
 
 
 # --- the package surface ------------------------------------------------------

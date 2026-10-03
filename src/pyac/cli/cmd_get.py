@@ -9,17 +9,17 @@ The request itself is httpx's, through :mod:`usernet.http`, so
 chunked encoding, keep-alive, redirects, and content decoding are all handled
 by a library that has seen far more of the web than we have.
 
-One limit remains, and it is not temporary in the same way the others were:
-**IP addresses only.** This gateway advertises no DNS servers, so there is
-nothing to resolve against, and resolving an internal name through the *host's*
-resolver would both leak it and usually fail.
+**Names come from the host table or nowhere.** This gateway advertises no DNS
+servers, and resolving an internal name through the *host's* resolver would
+both leak it and usually fail. A URL may name an address, or a name from the
+profile's ``hosts`` table or ``--add-host``; anything else is refused before
+authenticating.
 """
 
 from __future__ import annotations
 
 import argparse
 import asyncio
-import ipaddress
 import json
 import ssl
 import sys
@@ -29,12 +29,19 @@ from dataclasses import dataclass
 import httpx
 from usernet.http import TunnelTransport
 from usernet.pcap import PcapWriter
+from usernet.resolve import StaticResolver
 from usernet.routing import describe_routes, route_allows
 from usernet.runtime.driver import Driver
 
 from pyac._logging import configure as configure_logging
 from pyac.auth.client import authenticate, build_ssl_context, logout
-from pyac.cli import apply_profile, buffer_bytes, finalize_route_policy
+from pyac.cli import (
+    add_host_argument,
+    apply_profile,
+    buffer_bytes,
+    finalize_route_policy,
+    host_resolver,
+)
 from pyac.cli.cmd_probe import parse_gateway
 from pyac.cli.cmd_up import read_password
 from pyac.config import Credentials, GatewayConfig
@@ -54,8 +61,9 @@ def register(
         help="fetch one URL through the tunnel",
         description=(
             "Authenticate, bring the tunnel up, and make one HTTP or HTTPS request "
-            "through the userspace TCP stack. The URL must name an IP address: "
-            "there is no resolver inside the tunnel."
+            "through the userspace TCP stack. The URL names an IP address, or a "
+            "name from the profile's hosts table or --add-host: names are never "
+            "sent to the host's DNS."
         ),
     )
     parser.add_argument(
@@ -64,7 +72,7 @@ def register(
         default=None,
         help="gateway hostname, optionally host:port (or from --profile)",
     )
-    parser.add_argument("url", help="http[s]://<ip>[:port][/path] inside the VPN")
+    parser.add_argument("url", help="http[s]://<ip-or-name>[:port][/path] inside the VPN")
     parser.add_argument("-u", "--user", help="username (or from --profile)")
     parser.add_argument("-g", "--group", help="tunnel group (see `pyac probe`)")
     parser.add_argument(
@@ -121,10 +129,10 @@ def register(
     parser.add_argument(
         "--tls-name",
         metavar="NAME",
-        help="name to send as SNI and verify the certificate against; defaults to "
-        "the Host header, since a certificate is issued for a name and we can "
-        "only dial an address",
+        help="name to send as SNI and verify the certificate against, when the URL "
+        "names an address; defaults to the Host header",
     )
+    add_host_argument(parser)
     parser.add_argument(
         "--route-policy",
         choices=("auto", "all"),
@@ -165,15 +173,8 @@ def parse_url(url: str) -> Target:
 
     authority, slash, path = rest.partition("/")
     host, _, port = authority.partition(":")
-
-    try:
-        ipaddress.IPv4Address(host)
-    except ValueError:
-        raise ValueError(
-            f"{host!r} is not an IPv4 address. There is no in-tunnel DNS resolver yet, "
-            "and resolving an internal name through the host would leak it and "
-            "probably fail. Pass the address directly."
-        ) from None
+    if not host:
+        raise ValueError(f"{url!r} names no host")
 
     return Target(
         scheme=scheme,
@@ -193,10 +194,11 @@ def parse_header(raw: str) -> tuple[str, str]:
 def tls_name(args: argparse.Namespace, headers: list[tuple[str, str]]) -> str | None:
     """Which name the target's certificate should be checked against.
 
-    There is no resolver, so the URL carries an address -- and a certificate is
-    never issued for one. Without this every HTTPS call would fail with "IP
-    address mismatch" and the only apparent remedy would be ``--insecure``,
-    which is precisely the wrong lesson to teach.
+    Needed when the URL carries an address rather than a name from the host
+    table -- and a certificate is never issued for an address. Without this
+    every such HTTPS call would fail with "IP address mismatch" and the only
+    apparent remedy would be ``--insecure``, which is precisely the wrong
+    lesson to teach.
     """
     if args.tls_name:
         return str(args.tls_name)
@@ -240,6 +242,12 @@ def run(args: argparse.Namespace) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     finalize_route_policy(args)
+    try:
+        resolver = host_resolver(args)
+        resolver.resolve(target.host)  # before authenticating: a typo should cost nothing
+    except PyacError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
     if not args.gateway:
         print("error: gateway is required (pass it directly, or via --profile)", file=sys.stderr)
         return 2
@@ -257,7 +265,7 @@ def run(args: argparse.Namespace) -> int:
     except KeyboardInterrupt:
         return 130
     try:
-        return asyncio.run(_run(args, gateway, credentials, target, headers))
+        return asyncio.run(_run(args, gateway, credentials, target, headers, resolver))
     except KeyboardInterrupt:
         return 130
     except PyacError as exc:
@@ -271,7 +279,10 @@ async def _run(
     credentials: Credentials,
     target: Target,
     headers: list[tuple[str, str]],
+    resolver: StaticResolver | None = None,
 ) -> int:
+    resolver = resolver or StaticResolver({})
+    address = resolver.resolve(target.host)
     print(f"authenticating to {gateway.host}...", file=sys.stderr)
     success = await authenticate(gateway, credentials)
 
@@ -294,14 +305,15 @@ async def _run(
             file=sys.stderr,
         )
 
-        if args.route_policy == "auto" and not route_allows(config, target.host):
+        if args.route_policy == "auto" and not route_allows(config, address):
+            named = target.host if address == target.host else f"{target.host} ({address})"
             raise RouteNotAllowed(
-                f"{target.host} is outside the gateway's split routes "
+                f"{named} is outside the gateway's split routes "
                 f"({describe_routes(config)}). Packets would be discarded with no "
                 f"error; pass --route-policy all to try anyway."
             )
 
-        driver = Driver(session, buffer=buffer_bytes(args))
+        driver = Driver(session, buffer=buffer_bytes(args), resolver=resolver)
         driver.start()
         try:
             response, timing = await _fetch(driver, target, args, headers)

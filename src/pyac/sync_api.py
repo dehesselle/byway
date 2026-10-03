@@ -26,7 +26,7 @@ import asyncio
 import contextlib
 import ssl
 import threading
-from collections.abc import Coroutine, Iterator
+from collections.abc import Coroutine, Iterator, Mapping
 from typing import Any, TypeVar
 
 import httpx
@@ -95,6 +95,7 @@ class SyncVpnClient:
         mtu: int = 1406,
         buffer: int | None = None,
         reconnect: bool = True,
+        hosts: Mapping[str, str] | None = None,
     ) -> SyncVpnClient:
         """Authenticate and bring the tunnel up, without a ``with`` block.
 
@@ -117,6 +118,7 @@ class SyncVpnClient:
                 mtu=mtu,
                 buffer=buffer,
                 reconnect=reconnect,
+                hosts=hosts,
             )
             vpn = loop.run(manager.__aenter__())
             http = vpn.httpx_client()
@@ -187,6 +189,7 @@ def connect_sync(
     mtu: int = 1406,
     buffer: int | None = None,
     reconnect: bool = True,
+    hosts: Mapping[str, str] | None = None,
 ) -> Iterator[SyncVpnClient]:
     """Blocking equivalent of :func:`pyac.connect`, scoped to HTTP.
 
@@ -206,6 +209,7 @@ def connect_sync(
         mtu=mtu,
         buffer=buffer,
         reconnect=reconnect,
+        hosts=hosts,
     )
     try:
         yield vpn
