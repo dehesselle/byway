@@ -10,8 +10,10 @@ import io
 import threading
 import time
 
+import pytest
+
 from pyac.cli import terminal
-from pyac.cli.terminal import TermWriter
+from pyac.cli.terminal import POP_TITLE, PUSH_TITLE, TermWriter, set_title_sequence, window_title
 
 
 class Sink(io.StringIO):
@@ -124,3 +126,38 @@ def test_a_wrapped_panel_line_is_counted_as_the_rows_it_takes() -> None:
     writer.write("after\n")
     writer.close([])
     assert "\x1b[2F\x1b[Jafter\n" in sink.getvalue()
+
+
+# --- window title -------------------------------------------------------------
+
+
+def test_controls_cannot_end_the_title_sequence_early() -> None:
+    assert set_title_sequence("py\x07a\x1bc\x9b") == "\x1b]0;pyac\x07"
+
+
+def test_the_title_is_set_and_given_back(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("TERM", raising=False)
+    restored: list[bool] = []
+    monkeypatch.setattr(terminal, "enable_vt", lambda _stream: lambda: restored.append(True))
+    sink = io.StringIO()
+
+    with pytest.raises(RuntimeError), window_title(sink, "pyac"):
+        assert sink.getvalue() == PUSH_TITLE + "\x1b]0;pyac\x07"
+        raise RuntimeError
+
+    assert sink.getvalue().endswith(POP_TITLE)
+    assert restored == [True]
+
+
+@pytest.mark.parametrize("dumb", [False, True])
+def test_no_title_without_a_terminal(monkeypatch: pytest.MonkeyPatch, dumb: bool) -> None:
+    if dumb:
+        monkeypatch.setenv("TERM", "dumb")
+        monkeypatch.setattr(terminal, "enable_vt", lambda _stream: lambda: None)
+    else:
+        monkeypatch.delenv("TERM", raising=False)
+        monkeypatch.setattr(terminal, "enable_vt", lambda _stream: None)
+    sink = io.StringIO()
+    with window_title(sink, "pyac"):
+        pass
+    assert sink.getvalue() == ""

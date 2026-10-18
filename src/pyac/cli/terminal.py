@@ -20,7 +20,7 @@ import queue
 import re
 import sys
 import threading
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from typing import TextIO
 
 QUEUE_SIZE = 1024
@@ -194,3 +194,48 @@ def enable_vt(stream: TextIO) -> Callable[[], None] | None:
         kernel32.SetConsoleMode(handle, original)
 
     return restore
+
+
+# --- window title -----------------------------------------------------------
+
+# XTPUSHTITLE and XTPOPTITLE: the terminal's own title is saved on a stack and
+# put back afterwards. A terminal without the stack ignores both, and keeps
+# our title until something else sets one.
+PUSH_TITLE = "\x1b[22;0t"
+POP_TITLE = "\x1b[23;0t"
+
+# C0 and C1 controls: a BEL or ESC inside the title would end the sequence
+# early and let the rest of it through as output.
+_CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f]")
+
+
+def set_title_sequence(title: str) -> str:
+    """The OSC 0 sequence that sets the window (and icon) title."""
+    return f"\x1b]0;{_CONTROL.sub('', title)}\x07"
+
+
+@contextlib.contextmanager
+def window_title(stream: TextIO, title: str) -> Iterator[None]:
+    """Show ``title`` as the terminal's title while the block runs.
+
+    Written straight to ``stream``, not through :class:`TermWriter`: this is
+    meant to wrap the event loop, not run on it, so a terminal that refuses
+    writes can delay startup or exit but never stall the tunnel.
+    """
+    restore_console = None if os.environ.get("TERM") == "dumb" else enable_vt(stream)
+    if restore_console is None:
+        yield
+        return
+
+    def send(sequence: str) -> None:
+        # Cosmetic: a terminal that has gone away is no reason to fail.
+        with contextlib.suppress(OSError, ValueError):
+            stream.write(sequence)
+            stream.flush()
+
+    send(PUSH_TITLE + set_title_sequence(title))
+    try:
+        yield
+    finally:
+        send(POP_TITLE)
+        restore_console()

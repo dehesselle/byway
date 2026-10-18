@@ -36,6 +36,7 @@ from pyac.cli import (
 from pyac.cli.cmd_probe import parse_gateway
 from pyac.cli.dashboard import Sources, dashboard
 from pyac.cli.dashboard import wanted as wants_dashboard
+from pyac.cli.terminal import window_title
 from pyac.config import Credentials, GatewayConfig
 from pyac.cstp.config import TunnelConfig
 from pyac.cstp.link import ReconnectingLink
@@ -334,13 +335,14 @@ def run(args: argparse.Namespace) -> int:
         )
     except KeyboardInterrupt:
         return 130
-    try:
-        return asyncio.run(_run(args, gateway, credentials))
-    except KeyboardInterrupt:
-        return 130
-    except PyacError as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 1
+    with window_title(sys.stderr, "pyac"):
+        try:
+            return asyncio.run(_run(args, gateway, credentials))
+        except KeyboardInterrupt:
+            return 130
+        except PyacError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
 
 
 async def _run(args: argparse.Namespace, gateway: GatewayConfig, credentials: Credentials) -> int:

@@ -52,7 +52,8 @@ socks5    127.0.0.1:1080
 On a terminal, `pyac up` keeps a small live panel beneath its output: how long ago the
 gateway last sent anything, the last keepalive's round trip, tunnel traffic, and each open
 SOCKS connection. Output that is piped or redirected stays plain, and so does
-`--no-dashboard`.
+`--no-dashboard`. The terminal's title reads "pyac" while `up` runs; terminals that keep a
+title stack get their previous title back on exit.
 
 | Option | Effect |
 | --- | --- |
