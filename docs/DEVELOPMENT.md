@@ -17,7 +17,8 @@ uv run ruff check . && uv run ruff format --check . && uv run mypy src
 `usernet` is not a dependency of the published package. For development, `uv sync` installs
 `../usernet` editable (`[tool.uv.sources]` in `pyproject.toml`). For a real sdist or wheel,
 `hatch_build.py` bundles usernet's sources into pyac's own distribution: from `../usernet`
-when it exists, otherwise from the copy an sdist carries in `src/usernet`. Nothing is
+when it exists, otherwise from the copy an sdist carries in `src/usernet`. If neither is
+there, the build fails instead of producing a package that cannot be imported. Nothing is
 published to an index yet.
 
 ## How it is tested

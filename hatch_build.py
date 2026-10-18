@@ -30,7 +30,12 @@ class CustomBuildHook(BuildHookInterface):
         elif usernet_in_sdist.is_dir():
             source = usernet_in_sdist
         else:
-            return
+            # Without usernet the wheel builds fine but fails to import, so
+            # refuse to build rather than ship something broken.
+            raise RuntimeError(
+                f"usernet sources not found: neither {sibling_usernet} nor "
+                f"{usernet_in_sdist} exists"
+            )
 
         # The wheel installs packages flat, same as src/pyac -> pyac.
         target = _USERNET_IN_SDIST if self.target_name == "sdist" else "usernet"
