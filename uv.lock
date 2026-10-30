@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.12"
 resolution-markers = [
     "python_full_version >= '3.15'",
@@ -746,6 +746,7 @@ dependencies = [
     { name = "defusedxml" },
     { name = "httpx" },
     { name = "platformdirs" },
+    { name = "usernet", extra = ["httpx"] },
 ]
 
 [package.optional-dependencies]
@@ -773,6 +774,7 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.27,<0.29" },
     { name = "keyring", marker = "extra == 'keyring'", specifier = ">=25" },
     { name = "platformdirs", specifier = ">=4" },
+    { name = "usernet", extras = ["httpx"], specifier = ">=0.7" },
 ]
 provides-extras = ["keyring"]
 
@@ -787,7 +789,7 @@ dev = [
     { name = "pytest-timeout", specifier = ">=2.3" },
     { name = "ruff", specifier = ">=0.6" },
     { name = "trustme", specifier = ">=1.1" },
-    { name = "usernet", extras = ["testing"], editable = "../usernet" },
+    { name = "usernet", extras = ["testing"] },
 ]
 
 [[package]]
@@ -943,30 +945,17 @@ wheels = [
 
 [[package]]
 name = "usernet"
-source = { editable = "../usernet" }
+version = "0.7.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/c1/dd/ba0baf6f563d7d8d4f4595883bce487699d885fd1266da62d5a40810e7d5/usernet-0.7.0.tar.gz", hash = "sha256:d9910f082f180c72ee0a2fa68f358c6cadc6d6f773c71966129a6a2c20819adf", size = 240305, upload-time = "2026-10-30T19:42:38.435Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/98/66/7b65bf4e256ade31d1ba7b9dcae43d842ae1ff33859719edc4bf34310f10/usernet-0.7.0-py3-none-any.whl", hash = "sha256:85d6d4507b6bef7e4cb3754ba348855c7ad176fc694e9a7544dea5f4a33d8185", size = 90837, upload-time = "2026-10-30T19:42:37.218Z" },
+]
 
 [package.optional-dependencies]
+httpx = [
+    { name = "httpx" },
+]
 testing = [
     { name = "trustme" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "httpx", marker = "extra == 'httpx'", specifier = ">=0.27,<0.29" },
-    { name = "trustme", marker = "extra == 'testing'", specifier = ">=1.1" },
-]
-provides-extras = ["httpx", "testing"]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "httpx", specifier = ">=0.27,<0.29" },
-    { name = "hypothesis", specifier = ">=6.100" },
-    { name = "mypy", specifier = ">=1.11" },
-    { name = "pytest", specifier = ">=8" },
-    { name = "pytest-asyncio", specifier = ">=0.24" },
-    { name = "pytest-cov", specifier = ">=5" },
-    { name = "pytest-timeout", specifier = ">=2.3" },
-    { name = "ruff", specifier = ">=0.6" },
-    { name = "scapy", specifier = ">=2.5" },
-    { name = "trustme", specifier = ">=1.1" },
 ]

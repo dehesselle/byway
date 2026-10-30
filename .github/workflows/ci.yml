@@ -13,21 +13,8 @@ jobs:
         os: [windows-latest, ubuntu-latest]
         python: ["3.12", "3.13"]
     runs-on: ${{ matrix.os }}
-    defaults:
-      run:
-        working-directory: pyac
     steps:
       - uses: actions/checkout@v4
-        with:
-          path: pyac
-      # The stack lives in usernet, which [tool.uv.sources] resolves from
-      # ../usernet. Until it is released anywhere, CI has to supply that
-      # sibling itself -- and testing against the tip of it is what catches a
-      # breaking change there on the commit that caused it rather than later.
-      - uses: actions/checkout@v4
-        with:
-          repository: dehesselle/usernet
-          path: usernet
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true

@@ -114,7 +114,7 @@ async def test_bad_credentials_are_reported(certs: Path) -> None:
 
 async def test_a_proxy_needing_auth_says_so_when_none_is_given(certs: Path) -> None:
     async with proxy_for(certs, username="alice", password="hunter2") as (server, _peer):
-        with pytest.raises(NetworkError, match="may require credentials"):
+        with pytest.raises(NetworkError, match="may require a username and password"):
             await open_via_socks("127.0.0.1", server.port, SERVER_IP, 22)
 
 

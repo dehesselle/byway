@@ -61,4 +61,4 @@ before you point it at a corporate gateway.
 - [docs/DESIGN.md](docs/DESIGN.md): architecture, core principles and deliberate omissions
 - [docs/protocol.md](docs/protocol.md): CSTP protocol notes and gateway observations
 - [docs/throughput.md](docs/throughput.md): throughput measurements
-- [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md): building, testing, the `usernet` checkout
+- [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md): building and testing

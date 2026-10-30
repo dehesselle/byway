@@ -2,11 +2,9 @@
 
 Building and testing pyac. The design is described in [DESIGN.md](DESIGN.md).
 
-pyac uses Python 3.12 and [uv](https://docs.astral.sh/uv/). It needs a checkout of
-[`usernet`](https://github.com/dehesselle/usernet) beside this repository:
+pyac uses Python 3.12 and [uv](https://docs.astral.sh/uv/):
 
 ```sh
-git clone https://github.com/dehesselle/usernet ../usernet
 uv sync --dev
 uv run pytest
 uv run ruff check . && uv run ruff format --check . && uv run mypy src
@@ -14,12 +12,9 @@ uv run ruff check . && uv run ruff format --check . && uv run mypy src
 
 ## usernet
 
-`usernet` is not a dependency of the published package. For development, `uv sync` installs
-`../usernet` editable (`[tool.uv.sources]` in `pyproject.toml`). For a real sdist or wheel,
-`hatch_build.py` bundles usernet's sources into pyac's own distribution: from `../usernet`
-when it exists, otherwise from the copy an sdist carries in `src/usernet`. If neither is
-there, the build fails instead of producing a package that cannot be imported. Nothing is
-published to an index yet.
+[`usernet`](https://github.com/dehesselle/usernet) is an ordinary dependency from PyPI. To
+try pyac against a local checkout of it, install that into the venv with
+`uv pip install -e ../usernet`; the next `uv sync` puts the released version back.
 
 ## How it is tested
 
