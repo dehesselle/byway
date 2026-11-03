@@ -29,8 +29,8 @@ address it was assigned. `ReconnectingLink` is this project's implementation of 
 
 1. **No tun device, no routing changes, no administrator rights.** Everything carried over
    the tunnel lives inside the Python process, so VPN access is scoped to that process.
-2. **Only CSTP lives here.** Anything that does not know what AnyConnect is belongs in
-   `usernet`, behind `IpLink`.
+2. **Only the VPN protocol lives here.** Anything not specific to it belongs in `usernet`,
+   behind `IpLink`.
 3. **Every session ends with a logout.** Leaving `pyac.connect()` closes the tunnel *and*
    posts the logout, whatever went wrong. That is not housekeeping: gateways enforce
    concurrent-session limits, and leaked sessions eventually lock you out of your own VPN

@@ -1,7 +1,7 @@
 [project]
 name = "pyac"
 dynamic = ["version"]
-description = "Userspace Cisco AnyConnect (CSTP) client with an in-process TCP/IP stack"
+description = "Userspace client that speaks the Cisco AnyConnect VPN protocol, with an in-process TCP/IP stack"
 readme = "README.md"
 authors = [{ name = "René de Hesselle", email = "dehesselle@web.de" }]
 requires-python = ">=3.12"
@@ -84,7 +84,7 @@ timeout = 30
 addopts = "--strict-markers"
 markers = [
     "slow: takes more than a second",
-    "needs_gateway: requires a real AnyConnect gateway (never runs in CI)",
+    "needs_gateway: requires a real VPN gateway (never runs in CI)",
 ]
 
 [tool.coverage.run]

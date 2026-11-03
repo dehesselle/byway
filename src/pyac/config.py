@@ -14,7 +14,7 @@ DEFAULT_USER_AGENT = "AnyConnect Windows 4.10.07061"
 
 @dataclass(frozen=True, slots=True)
 class GatewayConfig:
-    """How to reach and trust an AnyConnect gateway."""
+    """How to reach and trust a VPN gateway."""
 
     host: str
     port: int = 443

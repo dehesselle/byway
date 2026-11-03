@@ -61,7 +61,10 @@ def add_global_flags(parser: argparse.ArgumentParser, *, suppress: bool = False)
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="pyac",
-        description="Userspace Cisco AnyConnect client -- no tun device, no admin rights.",
+        description=(
+            "Userspace client that speaks the Cisco AnyConnect VPN protocol -- "
+            "no tun device, no admin rights."
+        ),
     )
     parser.add_argument("--version", action="version", version=f"pyac {__version__}")
     add_global_flags(parser)

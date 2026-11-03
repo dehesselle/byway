@@ -1,6 +1,6 @@
-"""pyac -- a userspace Cisco AnyConnect (CSTP) client.
+"""pyac -- a userspace client that speaks the Cisco AnyConnect VPN protocol.
 
-Connects to an AnyConnect gateway and terminates the tunnel's IP traffic in an
+Connects to a VPN gateway and terminates the tunnel's IP traffic in an
 in-process TCP/IP stack, so no tun device, virtual adapter, routing change, or
 administrator privilege is required.
 
