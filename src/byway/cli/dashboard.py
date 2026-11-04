@@ -451,7 +451,8 @@ async def dashboard(sources: Sources, *, enabled: bool) -> AsyncIterator[bool]:
     def frame(*, final: bool = False) -> list[str]:
         columns, lines = _terminal_size()
         sample = sampler.next(sources)
-        return render(sample, columns, lines, final=final, glyphs=glyphs, style=style)
+        # The leading empty row keeps the panel clear of the output above it.
+        return ["", *render(sample, columns, lines, final=final, glyphs=glyphs, style=style)]
 
     # The handler usernet.log.configure installed, pointed at the writer.
     handlers = {

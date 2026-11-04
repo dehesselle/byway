@@ -53,6 +53,9 @@ log = logging.getLogger("byway.cli")
 _PROTOCOLS = {1: "icmp", 6: "tcp", 17: "udp", 47: "gre", 50: "esp"}
 _ICMP_TYPES = {0: "echo-reply", 3: "unreachable", 8: "echo-request", 11: "ttl-exceeded"}
 
+# The last line of startup output, whichever mode `up` runs in.
+READY_MESSAGE = "\ntunnel is up; press Ctrl-C to disconnect"
+
 
 def register(
     subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
@@ -388,7 +391,6 @@ async def _run(args: argparse.Namespace, gateway: GatewayConfig, credentials: Cr
         if pcap is not None:
             print(f"\nwriting {args.pcap}")
         print_liveness(config, args, link.rekey_seconds)
-        print("\ntunnel is up; press Ctrl-C to disconnect")
 
         sources = Sources(link, gateway.host, keepalive=bool(args.socks and args.keepalive))
         async with dashboard(sources, enabled=wants_dashboard(args)) as drawing:
@@ -402,9 +404,11 @@ async def _run(args: argparse.Namespace, gateway: GatewayConfig, credentials: Cr
             if args.socks:
                 await _serve_socks(link, args, sources)
             elif args.dump_only or args.ping:
+                print(READY_MESSAGE)
                 await _dump(link, verbose=args.verbose > 0, heartbeat=not drawing)
             else:
                 print("(nothing to do: pass --socks to serve a proxy, or --dump-only)")
+                print(READY_MESSAGE)
                 await link.closed.wait()
 
             if pinger is not None:
@@ -480,7 +484,7 @@ async def _serve_socks(link: ReconnectingLink, args: argparse.Namespace, sources
             print(f"\ncurl --socks5-hostname {proxy.address} http://{example}/")
         else:
             print(f"\ncurl --socks5 {proxy.address} http://<ip-inside-the-vpn>/")
-        print("\npress Ctrl-C to disconnect")
+        print(READY_MESSAGE)
 
         keeper = None
         if args.keepalive:

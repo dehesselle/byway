@@ -335,6 +335,7 @@ async def test_the_dashboard_takes_over_output_and_gives_it_back(
         drawn = console.getvalue()
         assert drawn.index("a warning") < drawn.rindex(title)
         assert drawn.index("a print") < drawn.rindex(title)
+        assert f"a print\n\n+- {title}" in drawn  # one blank line above the panel
         # The last frame is the final one, and nothing is drawn after it.
         assert "Ctrl+C" not in drawn[drawn.rindex(title) :]
         assert drawn.endswith("+\n")
