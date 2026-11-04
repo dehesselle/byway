@@ -118,7 +118,7 @@ async def test_a_name_from_the_host_table_is_fetched(
     certs: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     async with serving(b"fetched by name", certs) as gateway:
-        result = await fetch(gateway, host="web.orka", hosts={"web.orka": SERVER_IP})
+        result = await fetch(gateway, host="web.internal", hosts={"web.internal": SERVER_IP})
 
     assert result == 0
     assert capsys.readouterr().out.endswith("fetched by name")
@@ -277,8 +277,8 @@ async def test_an_address_outside_the_split_routes_is_refused(certs: Path) -> No
 
         # A name is checked by what it resolves to, and the message says both.
         gateway.responses = auth_exchange()
-        with pytest.raises(RouteNotAllowed, match=rf"web\.orka \({SERVER_IP}\) is outside"):
-            await fetch(gateway, host="web.orka", hosts={"web.orka": SERVER_IP})
+        with pytest.raises(RouteNotAllowed, match=rf"web\.internal \({SERVER_IP}\) is outside"):
+            await fetch(gateway, host="web.internal", hosts={"web.internal": SERVER_IP})
 
         # ...and the escape hatch really does bypass the check.
         gateway.responses = auth_exchange()

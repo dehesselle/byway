@@ -51,9 +51,9 @@ def test_the_scheme_may_be_omitted() -> None:
 
 
 def test_a_hostname_is_kept_for_the_host_table_to_resolve() -> None:
-    target = parse_url("https://api.orka/v1")
-    assert (target.host, target.port) == ("api.orka", 443)
-    assert target.url == "https://api.orka/v1"
+    target = parse_url("https://api.internal/v1")
+    assert (target.host, target.port) == ("api.internal", 443)
+    assert target.url == "https://api.internal/v1"
 
 
 def test_a_url_without_a_host_is_refused() -> None:

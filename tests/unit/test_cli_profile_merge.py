@@ -172,12 +172,12 @@ def test_profile_route_policy_survives_finalize(tmp_path: Path) -> None:
 
 
 HOSTS_PROFILE = """
-[profiles.orka]
+[profiles.work]
 gateway = "vpn.example.com"
 
-[profiles.orka.hosts]
-"node-1.orka" = "10.0.0.11"
-"api.orka" = "10.0.0.20"
+[profiles.work.hosts]
+"node-1.internal" = "10.0.0.11"
+"api.internal" = "10.0.0.20"
 """
 
 
@@ -188,17 +188,17 @@ def test_add_host_adds_to_and_overrides_the_profile_table(tmp_path: Path) -> Non
         str(path),
         "up",
         "--profile",
-        "orka",
+        "work",
         "--add-host",
-        "API.orka=10.0.0.21",
+        "API.internal=10.0.0.21",
         "--add-host",
-        "node-2.orka=10.0.0.12",
+        "node-2.internal=10.0.0.12",
     )
     apply_profile(args)
     resolver = host_resolver(args)
-    assert resolver.lookup("node-1.orka") == "10.0.0.11"
-    assert resolver.lookup("node-2.orka") == "10.0.0.12"
-    assert resolver.lookup("api.orka") == "10.0.0.21"
+    assert resolver.lookup("node-1.internal") == "10.0.0.11"
+    assert resolver.lookup("node-2.internal") == "10.0.0.12"
+    assert resolver.lookup("api.internal") == "10.0.0.21"
 
 
 def test_add_host_works_without_a_profile() -> None:
@@ -208,9 +208,9 @@ def test_add_host_works_without_a_profile() -> None:
 
 def test_an_unknown_name_says_where_names_come_from(tmp_path: Path) -> None:
     path = write_profile(tmp_path, HOSTS_PROFILE)
-    args = parse("--config", str(path), "http", "--profile", "orka", "http://other/")
+    args = parse("--config", str(path), "http", "--profile", "work", "http://other/")
     apply_profile(args)
-    with pytest.raises(BywayError, match=r"\[profiles\.orka\.hosts\] or --add-host"):
+    with pytest.raises(BywayError, match=r"\[profiles\.work\.hosts\] or --add-host"):
         host_resolver(args).resolve("other")
 
 

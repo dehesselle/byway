@@ -253,9 +253,11 @@ async def test_a_hostname_is_refused_because_there_is_no_resolver(
 
 async def test_a_hostname_in_the_host_table_is_connected_to(certs: Path) -> None:
     """`--socks5-hostname` against a gateway with no DNS: the table answers."""
-    async with proxy_for(certs, hosts={"node-1.orka": SERVER_IP}) as (server, _peer):
+    async with proxy_for(certs, hosts={"node-1.internal": SERVER_IP}) as (server, _peer):
         reader, writer, _method = await greet(server)
-        reply, _bound, _port = await request(reader, writer, host="node-1.orka", atyp=ATYP_DOMAIN)
+        reply, _bound, _port = await request(
+            reader, writer, host="node-1.internal", atyp=ATYP_DOMAIN
+        )
         writer.close()
 
     assert reply is Reply.SUCCESS
@@ -263,9 +265,11 @@ async def test_a_hostname_in_the_host_table_is_connected_to(certs: Path) -> None
 
 async def test_a_hostname_missing_from_the_table_is_still_refused(certs: Path) -> None:
     """Never a fallback to the host's DNS, table or no table."""
-    async with proxy_for(certs, hosts={"node-1.orka": SERVER_IP}) as (server, _peer):
+    async with proxy_for(certs, hosts={"node-1.internal": SERVER_IP}) as (server, _peer):
         reader, writer, _method = await greet(server)
-        reply, _bound, _port = await request(reader, writer, host="node-2.orka", atyp=ATYP_DOMAIN)
+        reply, _bound, _port = await request(
+            reader, writer, host="node-2.internal", atyp=ATYP_DOMAIN
+        )
         writer.close()
 
     assert reply is Reply.HOST_UNREACHABLE

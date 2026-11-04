@@ -192,10 +192,10 @@ async def test_resolve_refuses_rather_than_using_the_host_resolver(certs: Path) 
 
 
 async def test_a_name_from_the_hosts_table_resolves_and_connects(certs: Path) -> None:
-    hosts = {"node-1.orka": SERVER_IP}
+    hosts = {"node-1.internal": SERVER_IP}
     async with serving(b"by name", certs) as gateway, client_for(gateway, hosts) as vpn:
-        assert await vpn.resolve("Node-1.orka.") == [SERVER_IP]
-        reader, writer = await vpn.open_connection("node-1.orka", 80, timeout=10)
+        assert await vpn.resolve("Node-1.internal.") == [SERVER_IP]
+        reader, writer = await vpn.open_connection("node-1.internal", 80, timeout=10)
         writer.write(b"GET / HTTP/1.1\r\n\r\n")
         await writer.drain()
         assert (await asyncio.wait_for(reader.read(), timeout=10)).endswith(b"by name")
@@ -203,10 +203,10 @@ async def test_a_name_from_the_hosts_table_resolves_and_connects(certs: Path) ->
 
 
 async def test_http_reaches_a_name_from_the_hosts_table(certs: Path) -> None:
-    hosts = {"api.orka": SERVER_IP}
+    hosts = {"api.internal": SERVER_IP}
     async with serving(b"http by name", certs) as gateway, client_for(gateway, hosts) as vpn:
         async with vpn.httpx_client() as http:
-            response = await http.get("http://api.orka/")
+            response = await http.get("http://api.internal/")
         assert response.text == "http by name"
 
 

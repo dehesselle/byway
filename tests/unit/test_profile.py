@@ -254,16 +254,16 @@ def test_a_hosts_table_is_read(tmp_path: Path) -> None:
     path = write(
         tmp_path,
         """
-        [profiles.orka]
+        [profiles.work]
         gateway = "vpn.example.com"
 
-        [profiles.orka.hosts]
-        "node-1.orka" = "10.221.188.11"
+        [profiles.work.hosts]
+        "node-1.internal" = "10.221.188.11"
         api = "10.221.188.20"
         """,
     )
-    profile = load_profile("orka", path=path)
-    assert profile.hosts == {"node-1.orka": "10.221.188.11", "api": "10.221.188.20"}
+    profile = load_profile("work", path=path)
+    assert profile.hosts == {"node-1.internal": "10.221.188.11", "api": "10.221.188.20"}
 
 
 def test_no_hosts_table_means_an_empty_one(tmp_path: Path) -> None:
@@ -272,26 +272,26 @@ def test_no_hosts_table_means_an_empty_one(tmp_path: Path) -> None:
 
 
 def test_an_unquoted_dotted_name_is_explained(tmp_path: Path) -> None:
-    """TOML reads ``node-1.orka = ...`` as nested tables, which is never what
+    """TOML reads ``node-1.internal = ...`` as nested tables, which is never what
     anyone writing a hosts table meant."""
     path = write(
         tmp_path,
-        '[profiles.orka]\ngateway = "gw"\n[profiles.orka.hosts]\nnode-1.orka = "10.0.0.1"\n',
+        '[profiles.work]\ngateway = "gw"\n[profiles.work.hosts]\nnode-1.internal = "10.0.0.1"\n',
     )
-    with pytest.raises(BywayError, match=r"\[profiles\.orka\.hosts\].*quote names"):
-        load_profile("orka", path=path)
+    with pytest.raises(BywayError, match=r"\[profiles\.work\.hosts\].*quote names"):
+        load_profile("work", path=path)
 
 
 def test_a_hosts_entry_that_is_not_an_address_is_refused(tmp_path: Path) -> None:
     path = write(
         tmp_path,
-        '[profiles.orka]\ngateway = "gw"\n[profiles.orka.hosts]\napi = "api.example"\n',
+        '[profiles.work]\ngateway = "gw"\n[profiles.work.hosts]\napi = "api.example"\n',
     )
-    with pytest.raises(BywayError, match=r"config\.toml: \[profiles\.orka\.hosts\].*not an IPv4"):
-        load_profile("orka", path=path)
+    with pytest.raises(BywayError, match=r"config\.toml: \[profiles\.work\.hosts\].*not an IPv4"):
+        load_profile("work", path=path)
 
 
 def test_hosts_must_be_a_table(tmp_path: Path) -> None:
-    path = write(tmp_path, '[profiles.orka]\ngateway = "gw"\nhosts = "10.0.0.1"\n')
+    path = write(tmp_path, '[profiles.work]\ngateway = "gw"\nhosts = "10.0.0.1"\n')
     with pytest.raises(BywayError, match="must be a table"):
-        load_profile("orka", path=path)
+        load_profile("work", path=path)

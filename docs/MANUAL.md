@@ -117,26 +117,26 @@ There is no DNS inside the tunnel, so byway resolves names from a fixed table yo
 the profile, like `/etc/hosts` for this one VPN:
 
 ```toml
-[profiles.orka]
+[profiles.work]
 gateway = "vpn.example.com"
 user = "user"
 
-[profiles.orka.hosts]
-"node-1.orka" = "10.221.188.11"
-"api.orka" = "10.221.188.20"
+[profiles.work.hosts]
+"node-1.internal" = "10.221.188.11"
+"api.internal" = "10.221.188.20"
 ```
 
-Quote names that contain dots: TOML reads `node-1.orka = ...` as nested tables, and byway
+Quote names that contain dots: TOML reads `node-1.internal = ...` as nested tables, and byway
 refuses that with a hint. `--add-host NAME=ADDR` (repeatable) adds entries on the command line
 and overrides the profile's for the same name.
 
 With the table in place, names work wherever an address does:
 
 ```sh
-byway up --profile orka --socks
-curl --socks5-hostname 127.0.0.1:1080 http://api.orka/
-ssh -o ProxyCommand="byway nc --via 1080 %h %p" admin@node-1.orka
-byway http --profile orka https://api.orka/v1/status
+byway up --profile work --socks
+curl --socks5-hostname 127.0.0.1:1080 http://api.internal/
+ssh -o ProxyCommand="byway nc --via 1080 %h %p" admin@node-1.internal
+byway http --profile work https://api.internal/v1/status
 ```
 
 Use `--socks5-hostname` (curl) or `socks5h://`, so the name reaches byway. With plain
@@ -204,7 +204,7 @@ pin = "sha256:deadbeef..."
 # route_policy = "all"
 
 # [profiles.work.hosts]           # see Host names
-# "intranet.corp" = "10.221.188.20"
+# "intranet.internal" = "10.221.188.20"
 ```
 
 Only `gateway` is required; unknown keys are an error. `byway up --profile work` then
@@ -240,7 +240,7 @@ async with byway.connect("vpn.corp.example", user, password) as vpn:
 tunnel *and* posts the logout; see [DESIGN.md](DESIGN.md#core-principles) for why that
 matters.
 
-`hosts={"api.orka": "10.221.188.20"}` is the [host table](#host-names): every method that
+`hosts={"api.internal": "10.221.188.20"}` is the [host table](#host-names): every method that
 takes a host, `httpx_client()`, `serve_socks5()` and `vpn.resolve()` use it, and refuse any
 other name.
 

@@ -113,7 +113,7 @@ def _check_hosts(path: Path, name: str, hosts: object) -> None:
             # nested tables rather than as one name.
             raise BywayError(
                 f"{path}: {section}: {host!r} must map to an address string; "
-                f'quote names that contain dots, e.g. "node-1.orka" = "10.0.0.11"'
+                f'quote names that contain dots, e.g. "node-1.internal" = "10.0.0.11"'
             )
     try:
         StaticResolver(hosts, source=f"{path}: {section}")
