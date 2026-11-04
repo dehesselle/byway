@@ -101,7 +101,7 @@ def test_the_password_is_asked_twice_and_stored_under_profile_and_user(
     shown = prompts("hunter2", "hunter2")
     assert main(["password", "--config", config, "--profile", "work"]) == 0
     assert len(shown) == 2
-    assert fake_keyring.stored == {("work", "jdoe"): "hunter2"}
+    assert fake_keyring.stored == {("pylis:work", "jdoe"): "hunter2"}
 
 
 def test_a_stored_password_is_what_a_connect_then_reads(
@@ -116,13 +116,25 @@ def test_a_stored_password_is_what_a_connect_then_reads(
     assert read_password(False, profile="work", username="jdoe") == "hunter2"
 
 
+def test_another_applications_entry_is_not_sent_to_the_gateway(
+    fake_keyring: _FakeKeyring,
+    prompts: Callable[..., list[str]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The store is shared, and "work" is a name other programs use too."""
+    monkeypatch.delenv("PYLIS_PASSWORD", raising=False)
+    fake_keyring.stored[("work", "jdoe")] = "another application's secret"
+    prompts("typed")
+    assert read_password(False, profile="work", username="jdoe") == "typed"
+
+
 def test_running_it_again_replaces_the_password(
     fake_keyring: _FakeKeyring, config: str, prompts: Callable[..., list[str]]
 ) -> None:
-    fake_keyring.stored[("work", "jdoe")] = "old"
+    fake_keyring.stored[("pylis:work", "jdoe")] = "old"
     prompts("new", "new")
     assert main(["password", "--config", config, "--profile", "work"]) == 0
-    assert fake_keyring.stored == {("work", "jdoe"): "new"}
+    assert fake_keyring.stored == {("pylis:work", "jdoe"): "new"}
 
 
 def test_a_mismatch_stores_nothing(
@@ -163,7 +175,7 @@ def test_password_stdin_reads_one_line_without_prompting(
     monkeypatch.setattr(sys, "stdin", io.StringIO(stdin))
     assert main(["password", "--config", config, "--profile", "work", "--password-stdin"]) == 0
     assert shown == []
-    assert fake_keyring.stored == {("work", "jdoe"): "hunter2"}
+    assert fake_keyring.stored == {("pylis:work", "jdoe"): "hunter2"}
 
 
 def test_an_empty_password_is_refused(
@@ -183,7 +195,7 @@ def test_an_explicit_user_wins_over_the_profile(
 ) -> None:
     prompts("hunter2", "hunter2")
     assert main(["password", "--config", config, "--profile", "work", "-u", "other"]) == 0
-    assert fake_keyring.stored == {("work", "other"): "hunter2"}
+    assert fake_keyring.stored == {("pylis:work", "other"): "hunter2"}
 
 
 def test_no_username_anywhere_is_a_usage_error(
@@ -231,7 +243,7 @@ def test_delete_and_password_stdin_are_mutually_exclusive(config: str) -> None:
 def test_delete_removes_the_entry_without_asking_for_a_password(
     fake_keyring: _FakeKeyring, config: str, prompts: Callable[..., list[str]]
 ) -> None:
-    fake_keyring.stored[("work", "jdoe")] = "hunter2"
+    fake_keyring.stored[("pylis:work", "jdoe")] = "hunter2"
     shown = prompts()
     assert main(["password", "--config", config, "--profile", "work", "--delete"]) == 0
     assert shown == []

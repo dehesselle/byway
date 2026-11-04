@@ -177,7 +177,7 @@ pylis password --profile work
 ```
 
 This asks for the password twice and saves it in Windows Credential Manager, macOS Keychain or
-the Linux Secret Service. The username comes from the profile, or from `-u USER`, and has to
+the Linux Secret Service, under the name `pylis:work`. The username comes from the profile, or from `-u USER`, and has to
 match the one you connect with. `--password-stdin` reads the password from stdin instead, and
 `--delete` removes the stored password. To replace a password, run the command again.
 

@@ -178,7 +178,7 @@ def install_fake_keyring(monkeypatch: pytest.MonkeyPatch, get_password: object) 
 def test_keyring_lookup_returns_the_stored_password(monkeypatch: pytest.MonkeyPatch) -> None:
     calls = install_fake_keyring(monkeypatch, "hunter2")
     assert password_from_keyring("work", "jdoe") == "hunter2"
-    assert calls == [("work", "jdoe")]
+    assert calls == [("pylis:work", "jdoe")]
 
 
 def test_keyring_lookup_returns_none_when_nothing_is_stored(

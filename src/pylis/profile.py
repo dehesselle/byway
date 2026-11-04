@@ -121,6 +121,16 @@ def _check_hosts(path: Path, name: str, hosts: object) -> None:
         raise PylisError(str(exc)) from None
 
 
+def _keyring_service(profile: str) -> str:
+    """The name a profile's password has in the credential store.
+
+    Prefixed because every application on the machine shares that store: under
+    a bare ``work``, pylis could pick up another program's password and send it
+    to a gateway.
+    """
+    return f"pylis:{profile}"
+
+
 def password_from_keyring(target: str, username: str) -> str | None:
     """Look up a password stored with ``pylis password``.
 
@@ -135,7 +145,7 @@ def password_from_keyring(target: str, username: str) -> str | None:
     except ImportError:
         return None
     try:
-        return keyring.get_password(target, username)
+        return keyring.get_password(_keyring_service(target), username)
     except keyring.errors.KeyringError as exc:
         raise PylisError(f"keyring lookup for {target!r}/{username!r} failed: {exc}") from exc
 
@@ -160,7 +170,7 @@ def store_password_in_keyring(target: str, username: str, password: str) -> None
     """Store a password where :func:`password_from_keyring` looks it up."""
     keyring = require_keyring()
     try:
-        keyring.set_password(target, username, password)
+        keyring.set_password(_keyring_service(target), username, password)
     except keyring.errors.KeyringError as exc:
         raise PylisError(f"keyring store for {target!r}/{username!r} failed: {exc}") from exc
 
@@ -171,8 +181,9 @@ def delete_password_from_keyring(target: str, username: str) -> None:
     try:
         # Checked up front: what backends report for a missing entry is unhelpful,
         # on Windows just the bare profile name.
-        if keyring.get_password(target, username) is None:
+        service = _keyring_service(target)
+        if keyring.get_password(service, username) is None:
             raise PylisError(f"no password is stored for {target!r}/{username!r}")
-        keyring.delete_password(target, username)
+        keyring.delete_password(service, username)
     except keyring.errors.KeyringError as exc:
         raise PylisError(f"keyring delete for {target!r}/{username!r} failed: {exc}") from exc
