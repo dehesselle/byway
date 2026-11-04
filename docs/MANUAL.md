@@ -11,6 +11,7 @@ version; how pylis behaves while running is in [OPERATIONS.md](OPERATIONS.md).
 | `pylis up [GATEWAY]` | Authenticate and hold the tunnel open, optionally serving SOCKS5. |
 | `pylis nc HOST PORT` | Bridge stdin/stdout to one TCP connection inside the VPN, e.g. as an SSH `ProxyCommand`. |
 | `pylis http [GATEWAY] URL` | Authenticate, make one HTTP request through the tunnel, and exit. |
+| `pylis password --profile NAME` | Store a profile's password in the system's credential store, or remove it. |
 
 Options valid for every command, placed before or after it:
 
@@ -168,13 +169,17 @@ Credentials never go in `argv`. The password is resolved, in this order:
    keyed on the profile name and the resolved username
 4. the interactive prompt
 
-To use the keyring step, install the extra and store the password with the standalone
-`keyring` CLI it ships:
+To use the keyring step, install pylis with the extra and store the password:
 
 ```sh
-pip install pylis[keyring]
-keyring set work rene
+uv tool install "pylis[keyring]"
+pylis password --profile work
 ```
+
+This asks for the password twice and saves it in Windows Credential Manager, macOS Keychain or
+the Linux Secret Service. The username comes from the profile, or from `-u USER`, and has to
+match the one you connect with. `--password-stdin` reads the password from stdin instead, and
+`--delete` removes the stored password. To replace a password, run the command again.
 
 ## Profiles
 

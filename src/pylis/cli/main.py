@@ -14,7 +14,7 @@ from pylis import __version__
 
 # Commands register themselves here as they land; see cli/__init__.py.
 # Still to come: ping, resolve, info, diag.
-_COMMAND_MODULES: tuple[str, ...] = ("cmd_probe", "cmd_up", "cmd_http", "cmd_nc")
+_COMMAND_MODULES: tuple[str, ...] = ("cmd_probe", "cmd_up", "cmd_http", "cmd_nc", "cmd_password")
 
 
 def add_global_flags(parser: argparse.ArgumentParser, *, suppress: bool = False) -> None:

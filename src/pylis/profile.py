@@ -14,6 +14,7 @@ from __future__ import annotations
 import tomllib
 from dataclasses import dataclass, field, fields
 from pathlib import Path
+from types import ModuleType
 
 import platformdirs
 from usernet.resolve import StaticResolver
@@ -121,14 +122,12 @@ def _check_hosts(path: Path, name: str, hosts: object) -> None:
 
 
 def password_from_keyring(target: str, username: str) -> str | None:
-    """Look up a password stored via the standalone ``keyring`` CLI.
+    """Look up a password stored with ``pylis password``.
 
-    ``target`` is the profile name; the password is expected to have been
-    stored with ``keyring set <profile-name> <username>``. Returns ``None``
-    if nothing is stored there, or if the optional keyring package is not
-    installed -- the caller falls through to the interactive prompt, neither
-    is an error. Imports keyring lazily so the hard dependency list stays
-    untouched.
+    ``target`` is the profile name. Returns ``None`` if nothing is stored
+    there, or if the optional keyring package is not installed -- the caller
+    falls through to the interactive prompt, neither is an error. Imports
+    keyring lazily so the hard dependency list stays untouched.
     """
     try:
         import keyring
@@ -139,3 +138,41 @@ def password_from_keyring(target: str, username: str) -> str | None:
         return keyring.get_password(target, username)
     except keyring.errors.KeyringError as exc:
         raise PylisError(f"keyring lookup for {target!r}/{username!r} failed: {exc}") from exc
+
+
+def require_keyring() -> ModuleType:
+    """The keyring package, for someone who explicitly asked to use it.
+
+    Unlike a lookup, which can fall back to the prompt, this has no way to
+    carry on without the package, so raises PylisError with an install hint.
+    """
+    try:
+        import keyring
+        import keyring.errors
+    except ImportError as exc:
+        raise PylisError(
+            'this needs the optional keyring package: uv tool install "pylis[keyring]"'
+        ) from exc
+    return keyring
+
+
+def store_password_in_keyring(target: str, username: str, password: str) -> None:
+    """Store a password where :func:`password_from_keyring` looks it up."""
+    keyring = require_keyring()
+    try:
+        keyring.set_password(target, username, password)
+    except keyring.errors.KeyringError as exc:
+        raise PylisError(f"keyring store for {target!r}/{username!r} failed: {exc}") from exc
+
+
+def delete_password_from_keyring(target: str, username: str) -> None:
+    """Remove a stored password; raises PylisError if there is none."""
+    keyring = require_keyring()
+    try:
+        # Checked up front: what backends report for a missing entry is unhelpful,
+        # on Windows just the bare profile name.
+        if keyring.get_password(target, username) is None:
+            raise PylisError(f"no password is stored for {target!r}/{username!r}")
+        keyring.delete_password(target, username)
+    except keyring.errors.KeyringError as exc:
+        raise PylisError(f"keyring delete for {target!r}/{username!r} failed: {exc}") from exc

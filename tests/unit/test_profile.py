@@ -13,6 +13,7 @@ and every error path is worth pinning down directly.
 from __future__ import annotations
 
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -21,9 +22,11 @@ from pylis.errors import PylisError
 from pylis.profile import (
     Profile,
     config_file_path,
+    delete_password_from_keyring,
     load_profile,
     load_profiles,
     password_from_keyring,
+    store_password_in_keyring,
 )
 
 # --- config_file_path --------------------------------------------------------
@@ -199,6 +202,49 @@ def test_keyring_backend_errors_are_wrapped(monkeypatch: pytest.MonkeyPatch) -> 
     install_fake_keyring(monkeypatch, raising)
     with pytest.raises(PylisError, match="keyring lookup"):
         password_from_keyring("work", "jdoe")
+
+
+# --- keyring store and delete ---------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        lambda: store_password_in_keyring("work", "jdoe", "hunter2"),
+        lambda: delete_password_from_keyring("work", "jdoe"),
+    ],
+)
+def test_changing_the_keyring_without_the_package_gives_the_install_hint(
+    monkeypatch: pytest.MonkeyPatch, call: Callable[[], None]
+) -> None:
+    """Unlike a lookup, nothing can fall back to a prompt here."""
+    monkeypatch.setitem(sys.modules, "keyring", None)
+    with pytest.raises(PylisError, match=r'uv tool install "pylis\[keyring\]"'):
+        call()
+
+
+def test_keyring_store_and_delete_errors_are_wrapped(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _BrokenKeyring:
+        errors = _FakeErrorsModule
+
+        @staticmethod
+        def get_password(target: str, username: str) -> str | None:
+            return "stored"
+
+        @staticmethod
+        def set_password(target: str, username: str, password: str) -> None:
+            raise _FakeKeyringError("locked")
+
+        @staticmethod
+        def delete_password(target: str, username: str) -> None:
+            raise _FakeKeyringError("locked")
+
+    monkeypatch.setitem(sys.modules, "keyring", _BrokenKeyring)
+    monkeypatch.setitem(sys.modules, "keyring.errors", _FakeErrorsModule)
+    with pytest.raises(PylisError, match="keyring store"):
+        store_password_in_keyring("work", "jdoe", "hunter2")
+    with pytest.raises(PylisError, match="keyring delete"):
+        delete_password_from_keyring("work", "jdoe")
 
 
 # --- the hosts table -----------------------------------------------------------
