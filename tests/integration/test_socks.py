@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 René de Hesselle <dehesselle@web.de>
+#
+# SPDX-License-Identifier: 0BSD
+
 """The SOCKS5 proxy, end to end.
 
 A real client socket speaks RFC 1928 to the server, which opens a connection

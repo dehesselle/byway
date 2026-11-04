@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 René de Hesselle <dehesselle@web.de>
+#
+# SPDX-License-Identifier: 0BSD
+
 """The HTTP side of aggregate-auth.
 
 Certificate handling is the subtle part. Internal CAs are the norm for VPN

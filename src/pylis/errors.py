@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 René de Hesselle <dehesselle@web.de>
+#
+# SPDX-License-Identifier: 0BSD
+
 """Exception hierarchy for pylis.
 
 Every error the library raises derives from :class:`PylisError`, which is

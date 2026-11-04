@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 René de Hesselle <dehesselle@web.de>
+#
+# SPDX-License-Identifier: 0BSD
+
 """The CSTP tunnel, end to end against the fake gateway.
 
 Proves framing, DPD, config parsing, and MTU handling without a single line of

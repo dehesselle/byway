@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 René de Hesselle <dehesselle@web.de>
+#
+# SPDX-License-Identifier: 0BSD
+
 """``pylis nc`` -- bridge stdin/stdout to one TCP connection inside the VPN.
 
 The point of this command is a single line in an SSH invocation::

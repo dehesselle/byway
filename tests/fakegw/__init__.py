@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 René de Hesselle <dehesselle@web.de>
+#
+# SPDX-License-Identifier: 0BSD
+
 """A fake AnyConnect gateway for end-to-end tests.
 
 Grows with the milestones: it serves the auth XML exchange now, and gains

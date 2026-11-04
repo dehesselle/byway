@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 René de Hesselle <dehesselle@web.de>
+#
+# SPDX-License-Identifier: 0BSD
+
 """Runtime validation of gateway/user presence, now that argparse can't enforce it.
 
 Making ``gateway``/``-u`` optional at the argparse level (so --profile can

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 René de Hesselle <dehesselle@web.de>
+#
+# SPDX-License-Identifier: 0BSD
+
 """HTTPS through the tunnel: the M7 milestone, end to end.
 
 Auth, CSTP, framing, the userspace IPv4 stack, TCP, a real TLS session

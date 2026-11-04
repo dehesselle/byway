@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 René de Hesselle <dehesselle@web.de>
+#
+# SPDX-License-Identifier: 0BSD
+
 """End-to-end authentication against the fake gateway.
 
 Exercises the real code path -- TLS handshake, certificate inspection,

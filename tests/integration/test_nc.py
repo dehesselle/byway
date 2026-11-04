@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 René de Hesselle <dehesselle@web.de>
+#
+# SPDX-License-Identifier: 0BSD
+
 """``pylis nc --via``: the SOCKS client and the stdio bridge, end to end.
 
 The full path an SSH ProxyCommand takes -- stdin, a SOCKS5 proxy, the

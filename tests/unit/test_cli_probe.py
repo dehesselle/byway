@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 René de Hesselle <dehesselle@web.de>
+#
+# SPDX-License-Identifier: 0BSD
+
 """Rendering and argument handling for ``pylis probe``.
 
 The report is the whole product of M1 -- it is what tells us which dialect a

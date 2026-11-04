@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 René de Hesselle <dehesselle@web.de>
+#
+# SPDX-License-Identifier: 0BSD
+
 """``pylis up`` -- authenticate, bring the tunnel up, and hold it there.
 
 At M2 the only thing above the tunnel is ``--dump-only``, which reports the

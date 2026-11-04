@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 René de Hesselle <dehesselle@web.de>
+#
+# SPDX-License-Identifier: 0BSD
+
 """Aggregate-auth XML tests, driven off a corpus of gateway responses.
 
 Every real response encountered in the wild belongs in ``tests/corpus/``. That

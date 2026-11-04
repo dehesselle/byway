@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 René de Hesselle <dehesselle@web.de>
+#
+# SPDX-License-Identifier: 0BSD
+
 """Parsing of the ``--socks`` flags.
 
 Small functions, but a listener bound to the wrong interface is the difference

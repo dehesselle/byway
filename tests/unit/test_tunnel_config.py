@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 René de Hesselle <dehesselle@web.de>
+#
+# SPDX-License-Identifier: 0BSD
+
 """Parsing of the X-CSTP-* response headers.
 
 This is where gateway variation shows up, so the edge cases matter more than

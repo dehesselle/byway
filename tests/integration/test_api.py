@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 René de Hesselle <dehesselle@web.de>
+#
+# SPDX-License-Identifier: 0BSD
+
 """The public API, end to end against the fake gateway.
 
 ``pylis.connect`` is the whole product in one call: authenticate, open the

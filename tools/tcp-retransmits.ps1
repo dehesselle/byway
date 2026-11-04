@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 René de Hesselle <dehesselle@web.de>
+#
+# SPDX-License-Identifier: 0BSD
+
 # Sample Windows' TCP counters and report the retransmission rate.
 #
 # Run this alongside a transfer through the tunnel. It answers one question:

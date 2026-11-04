@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 René de Hesselle <dehesselle@web.de>
+#
+# SPDX-License-Identifier: 0BSD
+
 """What ``pylis up`` reports about staying alive.
 
 These lines used to be printed only when the gateway advertised a rekey time.

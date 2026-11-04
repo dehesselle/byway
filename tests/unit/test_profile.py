@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 René de Hesselle <dehesselle@web.de>
+#
+# SPDX-License-Identifier: 0BSD
+
 """Profile loading and the keyring password lookup.
 
 A profile is meant to replace typing the same connect flags every time, so a

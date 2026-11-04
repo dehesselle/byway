@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 René de Hesselle <dehesselle@web.de>
+#
+# SPDX-License-Identifier: 0BSD
+
 """The CSTP implementation of the IP link abstraction.
 
 Everything above this interface deals in whole IP packets and never learns

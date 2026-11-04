@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 René de Hesselle <dehesselle@web.de>
+#
+# SPDX-License-Identifier: 0BSD
+
 """Everything the gateway tells us about the tunnel, parsed and typed.
 
 The ``X-CSTP-*`` response headers to ``CONNECT /CSCOSSLC/tunnel`` carry the

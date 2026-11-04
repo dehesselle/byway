@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 René de Hesselle <dehesselle@web.de>
+#
+# SPDX-License-Identifier: 0BSD
+
 """A TLS server that speaks enough AnyConnect to test against.
 
 Handles both halves of the protocol: the aggregate-auth XML POST, and

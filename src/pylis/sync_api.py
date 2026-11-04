@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 René de Hesselle <dehesselle@web.de>
+#
+# SPDX-License-Identifier: 0BSD
+
 """A blocking facade over :mod:`pylis.api`, for callers that cannot use asyncio.
 
     with pylis.connect_sync("vpn.corp.example", user, password) as vpn:

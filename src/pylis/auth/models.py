@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 René de Hesselle <dehesselle@web.de>
+#
+# SPDX-License-Identifier: 0BSD
+
 """Parsed representations of the gateway's authentication XML.
 
 Gateways differ -- ASA, FTD, ocserv, and Meraki all vary in field names, in

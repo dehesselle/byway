@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 René de Hesselle <dehesselle@web.de>
+#
+# SPDX-License-Identifier: 0BSD
+
 """``pylis http`` -- make one HTTP request from inside the tunnel.
 
 Everything the project has built is on this path: aggregate-auth, the CSTP

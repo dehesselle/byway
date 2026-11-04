@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 René de Hesselle <dehesselle@web.de>
+#
+# SPDX-License-Identifier: 0BSD
+
 """CSTP frame codec tests.
 
 The reassembly property is the important one here: the tunnel is a TLS byte

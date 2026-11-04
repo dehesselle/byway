@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 René de Hesselle <dehesselle@web.de>
+#
+# SPDX-License-Identifier: 0BSD
+
 """pylis -- a userspace client that speaks the Cisco AnyConnect VPN protocol.
 
 Connects to a VPN gateway and terminates the tunnel's IP traffic in an

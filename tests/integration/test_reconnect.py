@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 René de Hesselle <dehesselle@web.de>
+#
+# SPDX-License-Identifier: 0BSD
+
 """Rekey and reconnection: the tunnel outliving the TLS connection under it.
 
 The top risk in the plan. An ASA advertises ``Rekey-Method: ssl``, meaning

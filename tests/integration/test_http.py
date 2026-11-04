@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 René de Hesselle <dehesselle@web.de>
+#
+# SPDX-License-Identifier: 0BSD
+
 """``pylis http`` against the fake gateway: every layer at once.
 
 Aggregate-auth, ``CONNECT``, CSTP framing, the userspace IPv4 stack, the TCP

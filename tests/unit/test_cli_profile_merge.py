@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 René de Hesselle <dehesselle@web.de>
+#
+# SPDX-License-Identifier: 0BSD
+
 """Merging --profile into parsed args: precedence, and the --no-verify asymmetry.
 
 A wrong precedence here means a "saved" setting silently overrides something a

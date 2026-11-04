@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 René de Hesselle <dehesselle@web.de>
+#
+# SPDX-License-Identifier: 0BSD
+
 """One CSTP tunnel over one TLS connection.
 
 Owns the socket, the framing, and the DPD/keepalive timers, and presents an

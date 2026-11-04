@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 René de Hesselle <dehesselle@web.de>
+#
+# SPDX-License-Identifier: 0BSD
+
 """Command-line interface.
 
 Shared helpers live here rather than in ``main.py``: ``main`` imports the

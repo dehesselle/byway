@@ -8,7 +8,11 @@ pylis uses Python 3.12 and [uv](https://docs.astral.sh/uv/):
 uv sync --dev
 uv run pytest
 uv run ruff check . && uv run ruff format --check . && uv run mypy src
+uvx reuse lint
 ```
+
+The project is REUSE-compliant. New files start with the SPDX header that `reuse annotate`
+writes; files that can't carry a comment get covered in `REUSE.toml`.
 
 ## usernet
 

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 René de Hesselle <dehesselle@web.de>
+#
+# SPDX-License-Identifier: 0BSD
+
 """Profiles: named, reusable connection settings, loaded from a TOML config file.
 
 Sibling to config.py, not a submodule of cli/: this module owns no argparse

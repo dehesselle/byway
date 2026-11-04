@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 René de Hesselle <dehesselle@web.de>
+#
+# SPDX-License-Identifier: 0BSD
+
 """URL and option handling for ``pylis http``.
 
 The HTTP itself is httpx's since M7, so what is left here is what we decide:

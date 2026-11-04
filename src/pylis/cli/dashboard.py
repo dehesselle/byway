@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 René de Hesselle <dehesselle@web.de>
+#
+# SPDX-License-Identifier: 0BSD
+
 """A live panel under ``pylis up``'s output, when there is a terminal to draw on.
 
 It answers "is the tunnel alive?" rather than "how fast is it?". Throughput

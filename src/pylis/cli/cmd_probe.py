@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 René de Hesselle <dehesselle@web.de>
+#
+# SPDX-License-Identifier: 0BSD
+
 """``pylis probe`` -- ask a gateway what it wants, without authenticating.
 
 The first thing to run against a new gateway. Gateway dialect is the largest

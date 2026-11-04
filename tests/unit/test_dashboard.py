@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 René de Hesselle <dehesselle@web.de>
+#
+# SPDX-License-Identifier: 0BSD
+
 """The ``pylis up`` dashboard: what it draws, and what it draws it from.
 
 The panel is redrawn by moving the cursor up as many rows as it last took, so

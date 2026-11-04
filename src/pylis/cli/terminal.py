@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 René de Hesselle <dehesselle@web.de>
+#
+# SPDX-License-Identifier: 0BSD
+
 """Terminal output that never stalls the tunnel, and a panel pinned beneath it.
 
 Everything in ``pylis up`` runs on one event loop, and a write to a terminal

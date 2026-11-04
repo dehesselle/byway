@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 René de Hesselle <dehesselle@web.de>
+#
+# SPDX-License-Identifier: 0BSD
+
 """pylis.connect_sync, end to end against the fake gateway.
 
 Mirrors the authenticated-path tests in test_api.py, but proves the sync

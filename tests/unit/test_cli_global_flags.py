@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 René de Hesselle <dehesselle@web.de>
+#
+# SPDX-License-Identifier: 0BSD
+
 """Global flags must work on either side of the subcommand.
 
 ``pylis up 1.2.3.4 -u me --pcap f.pcap`` is what a user naturally types, and

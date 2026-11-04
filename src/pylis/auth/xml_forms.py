@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 René de Hesselle <dehesselle@web.de>
+#
+# SPDX-License-Identifier: 0BSD
+
 """Sans-IO builder and parser for the aggregate-auth XML exchange.
 
 The exchange is::

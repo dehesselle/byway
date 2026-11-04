@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 René de Hesselle <dehesselle@web.de>
+#
+# SPDX-License-Identifier: 0BSD
+
 """Configuration shared by the auth, tunnel, and API layers.
 
 Lives outside :mod:`pylis.api` so :mod:`pylis.auth` can use it without importing

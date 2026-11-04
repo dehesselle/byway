@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 René de Hesselle <dehesselle@web.de>
+#
+# SPDX-License-Identifier: 0BSD
+
 """TermWriter: output that cannot stall the event loop, with a panel beneath it.
 
 The point of the class is the case a test is least likely to hit by accident:

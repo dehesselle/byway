@@ -62,3 +62,11 @@ before you point it at a corporate gateway.
 - [docs/protocol.md](docs/protocol.md): protocol notes and gateway observations
 - [docs/throughput.md](docs/throughput.md): throughput measurements
 - [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md): building and testing
+
+## AI disclosure
+
+Substantial parts of this code were generated with Sonnet 5.x/Opus 5.x. Generated code was tested, but not every line was reviewed in detail.
+
+## License
+
+pylis is licensed under 0BSD.

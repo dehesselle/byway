@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 René de Hesselle <dehesselle@web.de>
+#
+# SPDX-License-Identifier: 0BSD
+
 """CSTP frame codec.
 
 Wire format, verified against openconnect's ``cstp.c`` -- an 8-byte header
