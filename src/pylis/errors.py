@@ -1,14 +1,14 @@
-"""Exception hierarchy for pyac.
+"""Exception hierarchy for pylis.
 
-Every error the library raises derives from :class:`PyacError`, which is
+Every error the library raises derives from :class:`PylisError`, which is
 :class:`usernet.errors.UsernetError` under another name. An alias rather than a
 subclass, and that is the whole point: the stack, the sockets and the SOCKS
-server live in ``usernet`` and raise ``usernet`` errors, so a ``PyacError`` that
+server live in ``usernet`` and raise ``usernet`` errors, so a ``PylisError`` that
 did not also catch those would quietly stop covering half of what can go wrong.
 
 The ``NetworkError`` branch is re-exported from there for the same reason --
 callers import it from here, and where the class object is defined is not their
-business. The pyac-specific errors below (authentication, the CSTP tunnel) are
+business. The pylis-specific errors below (authentication, the CSTP tunnel) are
 the ones that genuinely have no meaning outside this project.
 """
 
@@ -39,7 +39,7 @@ __all__ = [
     "NetworkError",
     "PostureCheckRequired",
     "ProtocolParseError",
-    "PyacError",
+    "PylisError",
     "RekeyFailed",
     "ResolveError",
     "RouteNotAllowed",
@@ -48,13 +48,13 @@ __all__ = [
     "TunnelError",
 ]
 
-PyacError = UsernetError
+PylisError = UsernetError
 
 
 # --- authentication --------------------------------------------------------
 
 
-class AuthError(PyacError):
+class AuthError(PylisError):
     """Base for failures during the aggregate-auth XML exchange."""
 
 
@@ -89,7 +89,7 @@ class PostureCheckRequired(AuthError):
 # --- tunnel ----------------------------------------------------------------
 
 
-class TunnelError(PyacError):
+class TunnelError(PylisError):
     """Base for CSTP tunnel failures."""
 
 

@@ -14,7 +14,7 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from pyac.cstp.framing import (
+from pylis.cstp.framing import (
     FRAME_DPD_RESP,
     HEADER_LEN,
     MAGIC,
@@ -23,7 +23,7 @@ from pyac.cstp.framing import (
     PacketType,
     encode_frame,
 )
-from pyac.errors import ProtocolParseError
+from pylis.errors import ProtocolParseError
 
 
 def test_header_layout() -> None:

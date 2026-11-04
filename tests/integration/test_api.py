@@ -1,6 +1,6 @@
 """The public API, end to end against the fake gateway.
 
-``pyac.connect`` is the whole product in one call: authenticate, open the
+``pylis.connect`` is the whole product in one call: authenticate, open the
 tunnel, hand back something that behaves like a socket, and release the session
 on the way out. That last part is the one worth testing hardest -- a leaked
 session eventually locks a user out of their own VPN, and nothing about the
@@ -23,12 +23,12 @@ from usernet.resolve import StaticResolver
 from usernet.runtime.driver import Driver
 from usernet.testing.peer import TcpPeer, http_handler
 
-import pyac
-from pyac.api import VpnClient
-from pyac.config import GatewayConfig
-from pyac.cstp.link import ReconnectingLink
-from pyac.cstp.session import CstpSession
-from pyac.errors import NetworkError, PyacError, ResolveError
+import pylis
+from pylis.api import VpnClient
+from pylis.config import GatewayConfig
+from pylis.cstp.link import ReconnectingLink
+from pylis.cstp.session import CstpSession
+from pylis.errors import NetworkError, PylisError, ResolveError
 from tests.fakegw import FakeGateway
 from tests.fakegw.server import DEFAULT_TUNNEL_HEADERS
 from tests.integration.test_http import auth_exchange
@@ -86,7 +86,7 @@ def serving(body: bytes, certs: Path, port: int = 80) -> FakeGateway:
 
 async def test_open_connection_returns_a_usable_stdlib_pair(certs: Path) -> None:
     """The point of the whole transport bridge: code written against
-    ``asyncio.open_connection`` works without knowing pyac exists."""
+    ``asyncio.open_connection`` works without knowing pylis exists."""
     async with serving(b"through the tunnel", certs) as gateway, client_for(gateway) as vpn:
         reader, writer = await vpn.open_connection(SERVER_IP, 80, timeout=10)
 
@@ -183,7 +183,7 @@ async def test_resolve_refuses_rather_than_using_the_host_resolver(certs: Path) 
     """Silently resolving through the machine's DNS would leak internal names
     outside the VPN and return the wrong answers -- worse than not offering it."""
     async with serving(b"x", certs) as gateway, client_for(gateway) as vpn:
-        with pytest.raises(PyacError, match="never sent to the host's"):
+        with pytest.raises(PylisError, match="never sent to the host's"):
             await vpn.resolve("intranet.corp")
 
 
@@ -225,7 +225,7 @@ async def test_connect_authenticates_opens_and_logs_out(certs: Path) -> None:
         config = GatewayConfig(
             host="127.0.0.1", port=gateway.port, verify=gateway.ca_path, user_agent="test"
         )
-        async with pyac.connect(config, "rene", "secret") as vpn:
+        async with pylis.connect(config, "rene", "secret") as vpn:
             assert vpn.tunnel.address == "10.20.30.40"
             reader, writer = await vpn.open_connection(SERVER_IP, 80, timeout=10)
             writer.write(b"GET / HTTP/1.1\r\n\r\n")
@@ -248,7 +248,7 @@ async def test_connect_logs_out_even_when_the_body_raises(certs: Path) -> None:
             host="127.0.0.1", port=gateway.port, verify=gateway.ca_path, user_agent="test"
         )
         with pytest.raises(RuntimeError, match="boom"):
-            async with pyac.connect(config, "rene", "secret"):
+            async with pylis.connect(config, "rene", "secret"):
                 raise RuntimeError("boom")
 
     assert any("logout" in request.target for request in gateway.requests)
@@ -262,7 +262,7 @@ async def test_connect_refuses_a_bad_hosts_table_before_authenticating(certs: Pa
             host="127.0.0.1", port=gateway.port, verify=gateway.ca_path, user_agent="test"
         )
         with pytest.raises(ValueError, match="not an IPv4 address"):
-            async with pyac.connect(config, "rene", "secret", hosts={"a": "nowhere"}):
+            async with pylis.connect(config, "rene", "secret", hosts={"a": "nowhere"}):
                 pass
 
     assert gateway.requests == []
@@ -272,25 +272,25 @@ async def test_connect_refuses_a_bad_hosts_table_before_authenticating(certs: Pa
 
 
 def test_the_package_exports_what_the_readme_promises() -> None:
-    """Lazily, so that `import pyac` does not drag in httpx and the whole stack
+    """Lazily, so that `import pylis` does not drag in httpx and the whole stack
     for a program that only wanted the version."""
-    assert pyac.__version__
+    assert pylis.__version__
     for name in ("connect", "VpnClient", "GatewayConfig", "Credentials", "TunnelConfig"):
-        assert getattr(pyac, name) is not None
+        assert getattr(pylis, name) is not None
 
     with pytest.raises(AttributeError):
-        _ = pyac.does_not_exist  # type: ignore[attr-defined]
+        _ = pylis.does_not_exist  # type: ignore[attr-defined]
 
 
 def test_importing_the_package_pulls_in_nothing_heavy() -> None:
-    """`import pyac` must stay cheap for a program that only wants the version;
+    """`import pylis` must stay cheap for a program that only wants the version;
     a lazy __getattr__ that quietly stopped being lazy would go unnoticed."""
     import subprocess
     import sys
 
     probe = (
-        "import sys, pyac; "
-        "print(pyac.__version__); "
+        "import sys, pylis; "
+        "print(pylis.__version__); "
         "assert 'httpx' not in sys.modules, 'httpx imported eagerly'; "
         "assert 'usernet.net.tcb' not in sys.modules, 'the stack imported eagerly'"
     )

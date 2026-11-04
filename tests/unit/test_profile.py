@@ -13,8 +13,8 @@ from pathlib import Path
 
 import pytest
 
-from pyac.errors import PyacError
-from pyac.profile import (
+from pylis.errors import PylisError
+from pylis.profile import (
     Profile,
     config_file_path,
     load_profile,
@@ -25,10 +25,10 @@ from pyac.profile import (
 # --- config_file_path --------------------------------------------------------
 
 
-def test_config_file_path_is_under_a_pyac_directory() -> None:
+def test_config_file_path_is_under_a_pylis_directory() -> None:
     path = config_file_path()
     assert path.name == "config.toml"
-    assert path.parent.name == "pyac"
+    assert path.parent.name == "pylis"
 
 
 # --- parsing, valid ----------------------------------------------------------
@@ -91,33 +91,33 @@ def test_two_profiles_in_one_file(tmp_path: Path) -> None:
 # --- parsing, invalid ---------------------------------------------------------
 
 
-def test_invalid_toml_is_a_pyac_error(tmp_path: Path) -> None:
+def test_invalid_toml_is_a_pylis_error(tmp_path: Path) -> None:
     path = write(tmp_path, "this is not [ toml")
-    with pytest.raises(PyacError, match="invalid TOML"):
+    with pytest.raises(PylisError, match="invalid TOML"):
         load_profiles(path)
 
 
 def test_a_profile_without_gateway_is_rejected(tmp_path: Path) -> None:
     path = write(tmp_path, '[profiles.work]\nuser = "jdoe"\n')
-    with pytest.raises(PyacError, match="missing required key 'gateway'"):
+    with pytest.raises(PylisError, match="missing required key 'gateway'"):
         load_profiles(path)
 
 
 def test_an_unknown_key_is_rejected(tmp_path: Path) -> None:
     path = write(tmp_path, '[profiles.work]\ngateway = "x"\nbogus = 1\n')
-    with pytest.raises(PyacError, match="unknown key"):
+    with pytest.raises(PylisError, match="unknown key"):
         load_profiles(path)
 
 
 def test_a_bad_route_policy_is_rejected(tmp_path: Path) -> None:
     path = write(tmp_path, '[profiles.work]\ngateway = "x"\nroute_policy = "sometimes"\n')
-    with pytest.raises(PyacError, match="route_policy must be one of"):
+    with pytest.raises(PylisError, match="route_policy must be one of"):
         load_profiles(path)
 
 
 def test_profiles_must_be_a_table(tmp_path: Path) -> None:
     path = write(tmp_path, 'profiles = "not a table"\n')
-    with pytest.raises(PyacError, match=r"\[profiles\] must be a table"):
+    with pytest.raises(PylisError, match=r"\[profiles\] must be a table"):
         load_profiles(path)
 
 
@@ -129,13 +129,13 @@ def test_missing_file_has_no_profiles(tmp_path: Path) -> None:
 
 
 def test_load_profile_on_a_missing_file_explains_that(tmp_path: Path) -> None:
-    with pytest.raises(PyacError, match="no config file"):
+    with pytest.raises(PylisError, match="no config file"):
         load_profile("work", path=tmp_path / "nope.toml")
 
 
 def test_load_profile_lists_available_names(tmp_path: Path) -> None:
     path = write(tmp_path, '[profiles.home]\ngateway = "home.example.com"\n')
-    with pytest.raises(PyacError, match="available profiles: home"):
+    with pytest.raises(PylisError, match="available profiles: home"):
         load_profile("work", path=path)
 
 
@@ -181,11 +181,11 @@ def test_keyring_lookup_returns_none_when_nothing_is_stored(
     assert password_from_keyring("work", "jdoe") is None
 
 
-def test_keyring_not_installed_raises_a_pyac_error_with_the_install_hint(
+def test_keyring_not_installed_raises_a_pylis_error_with_the_install_hint(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setitem(sys.modules, "keyring", None)
-    with pytest.raises(PyacError, match=r"pip install pyac\[keyring\]"):
+    with pytest.raises(PylisError, match=r"pip install pylis\[keyring\]"):
         password_from_keyring("work", "jdoe")
 
 
@@ -194,7 +194,7 @@ def test_keyring_backend_errors_are_wrapped(monkeypatch: pytest.MonkeyPatch) -> 
         raise _FakeKeyringError("locked")
 
     install_fake_keyring(monkeypatch, raising)
-    with pytest.raises(PyacError, match="keyring lookup"):
+    with pytest.raises(PylisError, match="keyring lookup"):
         password_from_keyring("work", "jdoe")
 
 
@@ -229,7 +229,7 @@ def test_an_unquoted_dotted_name_is_explained(tmp_path: Path) -> None:
         tmp_path,
         '[profiles.orka]\ngateway = "gw"\n[profiles.orka.hosts]\nnode-1.orka = "10.0.0.1"\n',
     )
-    with pytest.raises(PyacError, match=r"\[profiles\.orka\.hosts\].*quote names"):
+    with pytest.raises(PylisError, match=r"\[profiles\.orka\.hosts\].*quote names"):
         load_profile("orka", path=path)
 
 
@@ -238,11 +238,11 @@ def test_a_hosts_entry_that_is_not_an_address_is_refused(tmp_path: Path) -> None
         tmp_path,
         '[profiles.orka]\ngateway = "gw"\n[profiles.orka.hosts]\napi = "api.example"\n',
     )
-    with pytest.raises(PyacError, match=r"config\.toml: \[profiles\.orka\.hosts\].*not an IPv4"):
+    with pytest.raises(PylisError, match=r"config\.toml: \[profiles\.orka\.hosts\].*not an IPv4"):
         load_profile("orka", path=path)
 
 
 def test_hosts_must_be_a_table(tmp_path: Path) -> None:
     path = write(tmp_path, '[profiles.orka]\ngateway = "gw"\nhosts = "10.0.0.1"\n')
-    with pytest.raises(PyacError, match="must be a table"):
+    with pytest.raises(PylisError, match="must be a table"):
         load_profile("orka", path=path)

@@ -1,6 +1,6 @@
 # Operations
 
-How pyac behaves while the tunnel is up, and what to do about it. Commands and options are
+How pylis behaves while the tunnel is up, and what to do about it. Commands and options are
 in [MANUAL.md](MANUAL.md).
 
 ## Idle timeout
@@ -9,13 +9,13 @@ An idle tunnel may be destroyed, not merely dropped. `X-CSTP-Idle-Timeout` is co
 30 minutes, and on the gateway used during development the session is invalidated when it
 fires — every reconnect then returns 401 and only a fresh login helps.
 
-`pyac up --keepalive <ip-inside-the-vpn>` sends an ICMP echo every 300 seconds
+`pylis up --keepalive <ip-inside-the-vpn>` sends an ICMP echo every 300 seconds
 (`--keepalive-interval`), so the timer never fires. DPD and keepalive *frames* do not always
 count; payload does.
 
 ## Reconnects and address changes
 
-When the tunnel ends, `pyac up` rebuilds it (unless `--no-reconnect`). Some gateways assign
+When the tunnel ends, `pylis up` rebuilds it (unless `--no-reconnect`). Some gateways assign
 a fresh address on every connection, and the one used during development does. Sockets bound
 to the old address cannot survive that, so they are failed with an error saying exactly
 that. The tunnel and the SOCKS listener stay up; individual connections do not. Traffic

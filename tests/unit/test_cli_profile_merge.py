@@ -13,9 +13,9 @@ from pathlib import Path
 
 import pytest
 
-from pyac.cli import apply_profile, finalize_route_policy, host_resolver
-from pyac.cli.main import build_parser
-from pyac.errors import PyacError
+from pylis.cli import apply_profile, finalize_route_policy, host_resolver
+from pylis.cli.main import build_parser
+from pylis.errors import PylisError
 
 
 def parse(*argv: str):  # type: ignore[no-untyped-def]
@@ -101,10 +101,10 @@ def test_explicit_flags_always_win_over_the_profile(tmp_path: Path) -> None:
     assert args.route_policy == "auto"
 
 
-def test_unknown_profile_name_is_a_pyac_error(tmp_path: Path) -> None:
+def test_unknown_profile_name_is_a_pylis_error(tmp_path: Path) -> None:
     path = write_profile(tmp_path, '[profiles.home]\ngateway = "home.example.com"\n')
     args = parse("--config", str(path), "up", "-u", "me", "--profile", "work")
-    with pytest.raises(PyacError, match="available profiles: home"):
+    with pytest.raises(PylisError, match="available profiles: home"):
         apply_profile(args)
 
 
@@ -206,7 +206,7 @@ def test_an_unknown_name_says_where_names_come_from(tmp_path: Path) -> None:
     path = write_profile(tmp_path, HOSTS_PROFILE)
     args = parse("--config", str(path), "http", "--profile", "orka", "http://other/")
     apply_profile(args)
-    with pytest.raises(PyacError, match=r"\[profiles\.orka\.hosts\] or --add-host"):
+    with pytest.raises(PylisError, match=r"\[profiles\.orka\.hosts\] or --add-host"):
         host_resolver(args).resolve("other")
 
 
@@ -216,5 +216,5 @@ def test_an_unknown_name_says_where_names_come_from(tmp_path: Path) -> None:
 )
 def test_a_malformed_add_host_is_refused(entry: str, message: str) -> None:
     args = parse("up", "gw", "--add-host", entry)
-    with pytest.raises(PyacError, match=message):
+    with pytest.raises(PylisError, match=message):
         host_resolver(args)

@@ -1,4 +1,4 @@
-"""What ``pyac up`` reports about staying alive.
+"""What ``pylis up`` reports about staying alive.
 
 These lines used to be printed only when the gateway advertised a rekey time.
 Against a gateway that advertises none -- as the one this was developed
@@ -13,10 +13,10 @@ import argparse
 
 import pytest
 
-from pyac.cli.cmd_up import print_close_advice, print_liveness, print_tunnel
-from pyac.cli.main import build_parser
-from pyac.cstp.config import TunnelConfig
-from pyac.errors import HandshakeRejected
+from pylis.cli.cmd_up import print_close_advice, print_liveness, print_tunnel
+from pylis.cli.main import build_parser
+from pylis.cstp.config import TunnelConfig
+from pylis.errors import HandshakeRejected
 
 
 def config(**overrides: object) -> TunnelConfig:

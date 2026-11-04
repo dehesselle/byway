@@ -1,16 +1,16 @@
-"""``pyac nc`` -- bridge stdin/stdout to one TCP connection inside the VPN.
+"""``pylis nc`` -- bridge stdin/stdout to one TCP connection inside the VPN.
 
 The point of this command is a single line in an SSH invocation::
 
-    ssh -o ProxyCommand="pyac nc --via 1080 %h %p" user@10.221.188.30
+    ssh -o ProxyCommand="pylis nc --via 1080 %h %p" user@10.221.188.30
 
-``--via`` borrows a tunnel a running ``pyac up --socks`` already holds open.
+``--via`` borrows a tunnel a running ``pylis up --socks`` already holds open.
 Prefer it: the alternative authenticates afresh for every ssh you start, which
 is slow and eats the gateway's concurrent-session limit.
 
 Direct mode (``--gateway``) exists for one-off use where no tunnel is running.
 It cannot read a password from stdin, because stdin is the data channel -- set
-``PYAC_PASSWORD`` or answer the console prompt.
+``PYLIS_PASSWORD`` or answer the console prompt.
 
 **Nothing may be printed to stdout.** Stdout is the connection. Every
 diagnostic here goes to stderr, and logging is configured to do the same.
@@ -29,20 +29,20 @@ from usernet.runtime.driver import Driver, TcpStream
 from usernet.runtime.stdio import CHUNK, StdioBridge
 from usernet.socks.client import open_via_socks
 
-from pyac._logging import configure as configure_logging
-from pyac.auth.client import authenticate, build_ssl_context, logout
-from pyac.cli import (
+from pylis._logging import configure as configure_logging
+from pylis.auth.client import authenticate, build_ssl_context, logout
+from pylis.cli import (
     add_host_argument,
     apply_profile,
     buffer_bytes,
     finalize_route_policy,
     host_resolver,
 )
-from pyac.cli.cmd_probe import parse_gateway
-from pyac.cli.cmd_up import parse_listen, parse_socks_auth, read_password
-from pyac.config import Credentials
-from pyac.cstp.session import CstpSession
-from pyac.errors import PyacError, RouteNotAllowed
+from pylis.cli.cmd_probe import parse_gateway
+from pylis.cli.cmd_up import parse_listen, parse_socks_auth, read_password
+from pylis.config import Credentials
+from pylis.cstp.session import CstpSession
+from pylis.errors import PylisError, RouteNotAllowed
 
 
 def register(
@@ -55,7 +55,7 @@ def register(
         help="bridge stdio to a TCP connection inside the VPN",
         description=(
             "Connect to one host inside the VPN and relay it to stdin/stdout, for "
-            'use as an SSH ProxyCommand: ssh -o ProxyCommand="pyac nc --via 1080 %%h %%p"'
+            'use as an SSH ProxyCommand: ssh -o ProxyCommand="pylis nc --via 1080 %%h %%p"'
         ),
     )
     parser.add_argument(
@@ -67,7 +67,7 @@ def register(
     parser.add_argument(
         "--via",
         metavar="[HOST:]PORT",
-        help="reuse a running `pyac up --socks` proxy instead of authenticating",
+        help="reuse a running `pylis up --socks` proxy instead of authenticating",
     )
     parser.add_argument("--via-auth", metavar="USER:PASS", help="credentials for that proxy")
 
@@ -178,13 +178,13 @@ async def bridge(remote: Remote, stdio: StdioBridge) -> None:
     to send, and tearing down there would truncate it. The remote closing is
     what ends the session.
     """
-    upstream = asyncio.create_task(_to_remote(remote, stdio), name="pyac-nc-upstream")
-    downstream = asyncio.create_task(_to_stdout(remote, stdio), name="pyac-nc-downstream")
+    upstream = asyncio.create_task(_to_remote(remote, stdio), name="pylis-nc-upstream")
+    downstream = asyncio.create_task(_to_stdout(remote, stdio), name="pylis-nc-downstream")
     try:
         await downstream
     finally:
         upstream.cancel()
-        with contextlib.suppress(asyncio.CancelledError, OSError, PyacError):
+        with contextlib.suppress(asyncio.CancelledError, OSError, PylisError):
             await upstream
 
 
@@ -237,13 +237,13 @@ def run(args: argparse.Namespace) -> int:
             apply_profile(args)
         except KeyboardInterrupt:
             return 130
-        except PyacError as exc:
+        except PylisError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 1
         finalize_route_policy(args)
         try:
             args.address = host_resolver(args).resolve(args.host)
-        except PyacError as exc:
+        except PylisError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 2
         if not args.gateway:
@@ -259,11 +259,11 @@ def run(args: argparse.Namespace) -> int:
         return asyncio.run(_run(args))
     except KeyboardInterrupt:
         return 130
-    except PyacError as exc:
-        print(f"pyac nc: {exc}", file=sys.stderr)
+    except PylisError as exc:
+        print(f"pylis nc: {exc}", file=sys.stderr)
         return 1
     except OSError as exc:
-        print(f"pyac nc: {exc}", file=sys.stderr)
+        print(f"pylis nc: {exc}", file=sys.stderr)
         return 1
 
 

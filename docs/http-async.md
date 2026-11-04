@@ -3,14 +3,14 @@
 The default answer for a Python project that already runs an event loop:
 `vpn.httpx_client()` gives you an `httpx.AsyncClient` wired straight into the
 tunnel. No proxy port, no SOCKS handshake, no extra dependency — `httpx` is
-already what `pyac.connect()` uses internally.
+already what `pylis.connect()` uses internally.
 
 ```python
-import pyac
+import pylis
 
 
 async def fetch_things(gateway: str, user: str, password: str) -> dict:
-    async with pyac.connect(gateway, user, password) as vpn:
+    async with pylis.connect(gateway, user, password) as vpn:
         async with vpn.httpx_client() as http:
             response = await http.get(f"http://10.221.188.20/v1/things", timeout=10)
             response.raise_for_status()
@@ -26,7 +26,7 @@ know `requests`, there is nothing new to learn here beyond `await`.
 - One process, one hop: requests go client → driver → tunnel directly, with
   no local server or port in between to bind, leak, or clean up.
 - No extra runtime dependency, and no background thread. `httpx` is already
-  required by `pyac`; the sync path (see [http-sync.md](http-sync.md)) needs
+  required by `pylis`; the sync path (see [http-sync.md](http-sync.md)) needs
   a dedicated thread to bridge blocking calls onto an event loop.
 - Flow control composes for free — the same backpressure guarantee the rest
   of the API gives (see [DESIGN.md](DESIGN.md#core-principles)).
@@ -37,12 +37,12 @@ URL, etc.) rather than taking the one `httpx_client()` hands back.
 
 ## The one caveat
 
-pyac has no in-tunnel DNS, so **hosts are IP addresses or names from the
-`hosts` table** passed to `pyac.connect()`. Nothing is ever asked of the
+pylis has no in-tunnel DNS, so **hosts are IP addresses or names from the
+`hosts` table** passed to `pylis.connect()`. Nothing is ever asked of the
 machine's own DNS:
 
 ```python
-async with pyac.connect(gateway, user, password, hosts={"api.internal": "10.221.188.20"}) as vpn:
+async with pylis.connect(gateway, user, password, hosts={"api.internal": "10.221.188.20"}) as vpn:
     async with vpn.httpx_client() as http:
         response = await http.get("https://api.internal/v1/things")
 ```
@@ -54,6 +54,6 @@ Any name not in the table raises `ResolveError`. See
 ## If your code isn't async
 
 `httpx_client()` requires an event loop. For plain synchronous Python code,
-use `pyac.connect_sync()` instead — see [http-sync.md](http-sync.md). For a
+use `pylis.connect_sync()` instead — see [http-sync.md](http-sync.md). For a
 non-Python process, use the local SOCKS5 proxy (`vpn.serve_socks5()`,
 documented in the same file).

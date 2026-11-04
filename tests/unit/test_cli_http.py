@@ -1,4 +1,4 @@
-"""URL and option handling for ``pyac http``.
+"""URL and option handling for ``pylis http``.
 
 The HTTP itself is httpx's since M7, so what is left here is what we decide:
 which URLs are acceptable, and which of the *two* trust decisions in this
@@ -13,15 +13,15 @@ from pathlib import Path
 
 import pytest
 
-from pyac.cli import cmd_http
-from pyac.cli.cmd_http import (
+from pylis.cli import cmd_http
+from pylis.cli.cmd_http import (
     parse_header,
     parse_url,
     read_body,
     request_method,
     target_verification,
 )
-from pyac.cli.main import build_parser
+from pylis.cli.main import build_parser
 
 # --- URLs ------------------------------------------------------------------
 

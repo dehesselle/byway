@@ -19,8 +19,8 @@ from types import TracebackType
 
 from usernet.pcap import PcapWriter
 
-from pyac.cstp.config import TunnelConfig, parse_tunnel_config
-from pyac.cstp.framing import (
+from pylis.cstp.config import TunnelConfig, parse_tunnel_config
+from pylis.cstp.framing import (
     FRAME_DISCONN,
     FRAME_DPD_OUT,
     FRAME_DPD_RESP,
@@ -29,10 +29,10 @@ from pyac.cstp.framing import (
     PacketType,
     encode_frame,
 )
-from pyac.cstp.handshake import build_connect_request, parse_connect_response, split_header_block
-from pyac.errors import ProtocolParseError, TunnelClosed
+from pylis.cstp.handshake import build_connect_request, parse_connect_response, split_header_block
+from pylis.errors import ProtocolParseError, TunnelClosed
 
-log = logging.getLogger("pyac.cstp")
+log = logging.getLogger("pylis.cstp")
 
 READ_SIZE = 65536
 

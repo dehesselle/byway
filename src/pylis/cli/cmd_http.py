@@ -1,4 +1,4 @@
-"""``pyac http`` -- make one HTTP request from inside the tunnel.
+"""``pylis http`` -- make one HTTP request from inside the tunnel.
 
 Everything the project has built is on this path: aggregate-auth, the CSTP
 tunnel, framing, the userspace IPv4 stack, a TCP connection, TLS over that
@@ -33,20 +33,20 @@ from usernet.resolve import StaticResolver
 from usernet.routing import describe_routes, route_allows
 from usernet.runtime.driver import Driver
 
-from pyac._logging import configure as configure_logging
-from pyac.auth.client import authenticate, build_ssl_context, logout
-from pyac.cli import (
+from pylis._logging import configure as configure_logging
+from pylis.auth.client import authenticate, build_ssl_context, logout
+from pylis.cli import (
     add_host_argument,
     apply_profile,
     buffer_bytes,
     finalize_route_policy,
     host_resolver,
 )
-from pyac.cli.cmd_probe import parse_gateway
-from pyac.cli.cmd_up import read_password
-from pyac.config import Credentials, GatewayConfig
-from pyac.cstp.session import CstpSession
-from pyac.errors import PyacError, RouteNotAllowed
+from pylis.cli.cmd_probe import parse_gateway
+from pylis.cli.cmd_up import read_password
+from pylis.config import Credentials, GatewayConfig
+from pylis.cstp.session import CstpSession
+from pylis.errors import PylisError, RouteNotAllowed
 
 DEFAULT_BODY_LIMIT = 8 * 1024 * 1024
 
@@ -74,7 +74,7 @@ def register(
     )
     parser.add_argument("url", help="http[s]://<ip-or-name>[:port][/path] inside the VPN")
     parser.add_argument("-u", "--user", help="username (or from --profile)")
-    parser.add_argument("-g", "--group", help="tunnel group (see `pyac probe`)")
+    parser.add_argument("-g", "--group", help="tunnel group (see `pylis probe`)")
     parser.add_argument(
         "--profile",
         metavar="NAME",
@@ -268,14 +268,14 @@ def run(args: argparse.Namespace) -> int:
         apply_profile(args)
     except KeyboardInterrupt:
         return 130
-    except PyacError as exc:
+    except PylisError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     finalize_route_policy(args)
     try:
         resolver = host_resolver(args)
         resolver.resolve(target.host)  # before authenticating: a typo should cost nothing
-    except PyacError as exc:
+    except PylisError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
     if not args.gateway:
@@ -303,7 +303,7 @@ def run(args: argparse.Namespace) -> int:
         return asyncio.run(_run(args, gateway, credentials, target, headers, resolver, body))
     except KeyboardInterrupt:
         return 130
-    except PyacError as exc:
+    except PylisError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 

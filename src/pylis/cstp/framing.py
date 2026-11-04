@@ -22,7 +22,7 @@ import struct
 from dataclasses import dataclass
 from enum import IntEnum
 
-from pyac.errors import ProtocolParseError
+from pylis.errors import ProtocolParseError
 
 MAGIC = b"STF\x01"
 HEADER_LEN = 8

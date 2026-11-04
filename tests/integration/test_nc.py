@@ -1,4 +1,4 @@
-"""``pyac nc --via``: the SOCKS client and the stdio bridge, end to end.
+"""``pylis nc --via``: the SOCKS client and the stdio bridge, end to end.
 
 The full path an SSH ProxyCommand takes -- stdin, a SOCKS5 proxy, the
 userspace stack, the CSTP tunnel, a peer -- with real pipes standing in for
@@ -21,8 +21,8 @@ from usernet.socks.client import open_via_socks
 from usernet.testing.peer import TcpPeer
 from usernet.testing.pipes import Pipes
 
-from pyac.cli.cmd_nc import ProxiedRemote, bridge
-from pyac.errors import ConnectionRefused, NetworkError, RouteNotAllowed
+from pylis.cli.cmd_nc import ProxiedRemote, bridge
+from pylis.errors import ConnectionRefused, NetworkError, RouteNotAllowed
 from tests.fakegw import FakeGateway
 from tests.fakegw.server import DEFAULT_TUNNEL_HEADERS
 from tests.integration.test_tunnel import session_for
@@ -178,7 +178,7 @@ async def test_the_bridge_ends_when_the_far_side_closes(certs: Path) -> None:
 async def test_a_gone_stdout_reader_ends_the_bridge_quietly(certs: Path) -> None:
     """ssh exiting can close its read end mid-write; that's not a failure.
 
-    This is what produced the stray ``pyac nc: [Errno 22] Invalid argument``
+    This is what produced the stray ``pylis nc: [Errno 22] Invalid argument``
     after every ordinary ssh exit: the far side's reply was still in flight
     when the consumer of our stdout went away.
     """

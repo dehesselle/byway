@@ -1,4 +1,4 @@
-"""``pyac probe`` -- ask a gateway what it wants, without authenticating.
+"""``pylis probe`` -- ask a gateway what it wants, without authenticating.
 
 The first thing to run against a new gateway. Gateway dialect is the largest
 unknown in this project, and probe resolves it with no credential sent and so
@@ -16,10 +16,10 @@ from typing import Any
 
 import httpx
 
-from pyac.auth.client import probe_gateway
-from pyac.auth.models import GatewayInfo
-from pyac.config import GatewayConfig
-from pyac.errors import PyacError
+from pylis.auth.client import probe_gateway
+from pylis.auth.models import GatewayInfo
+from pylis.config import GatewayConfig
+from pylis.errors import PylisError
 
 
 def register(
@@ -65,7 +65,7 @@ def run(args: argparse.Namespace) -> int:
     gateway = parse_gateway(args.gateway, pin=args.pin, no_verify=args.no_verify)
     try:
         info = asyncio.run(probe_gateway(gateway))
-    except PyacError as exc:
+    except PylisError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     except ssl.SSLError as exc:
@@ -152,7 +152,7 @@ def _print_report(info: GatewayInfo, *, show_raw: bool) -> None:
 
     if form.is_challenge:
         print("\n  NOTE: this gateway asks for an additional factor (MFA),")
-        print("        which pyac does not yet support.")
+        print("        which pylis does not yet support.")
 
     print("\nform fields")
     for field in form.fields:

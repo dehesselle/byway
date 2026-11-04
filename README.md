@@ -1,4 +1,4 @@
-# pyac
+# pylis
 
 A userspace client that speaks the Cisco AnyConnect VPN protocol. No tun device, no virtual
 adapter, no routing changes, no administrator rights — the tunnel and everything carried over
@@ -15,8 +15,8 @@ for working from a checkout.
 ## Using it
 
 ```console
-$ pyac probe vpn.corp.example          # what does this gateway ask for?
-$ pyac up vpn.corp.example -u rene --socks
+$ pylis probe vpn.corp.example          # what does this gateway ask for?
+$ pylis up vpn.corp.example -u rene --socks
 address   172.29.29.3/255.255.0.0
 mtu       1383
 routes    10.221.188.0/23
@@ -25,18 +25,18 @@ socks5    127.0.0.1:1080
 
 ```sh
 curl --socks5 127.0.0.1:1080 http://10.221.188.20/
-ssh -o ProxyCommand="pyac nc --via 127.0.0.1:1080 %h %p" rene@10.221.188.32
+ssh -o ProxyCommand="pylis nc --via 127.0.0.1:1080 %h %p" rene@10.221.188.32
 ```
 
-`pyac up` prompts for the password. Saved profiles, other ways to pass the password, and
+`pylis up` prompts for the password. Saved profiles, other ways to pass the password, and
 certificate pinning are in the [manual](docs/MANUAL.md).
 
 From your own program:
 
 ```python
-import pyac
+import pylis
 
-async with pyac.connect("vpn.corp.example", user, password) as vpn:
+async with pylis.connect("vpn.corp.example", user, password) as vpn:
     reader, writer = await vpn.open_connection("10.221.188.32", 22)
 
     async with vpn.httpx_client() as http:
@@ -46,7 +46,7 @@ async with pyac.connect("vpn.corp.example", user, password) as vpn:
 **Hosts are IP addresses, or names from a fixed table** in the profile: there is no
 in-tunnel DNS. IPv4, TLS, outbound TCP and username/password authentication only.
 
-**Check your policy first.** Many organisations require a sanctioned VPN client, and pyac
+**Check your policy first.** Many organisations require a sanctioned VPN client, and pylis
 bypasses posture assessment (CSD/HostScan) entirely. Check that you are allowed to use it
 before you point it at a corporate gateway.
 

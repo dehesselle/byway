@@ -18,8 +18,8 @@ from types import TracebackType
 import trustme
 from usernet.testing.peer import TcpPeer
 
-from pyac.cstp.framing import FrameDecoder, PacketType, encode_frame
-from pyac.errors import ProtocolParseError
+from pylis.cstp.framing import FrameDecoder, PacketType, encode_frame
+from pylis.errors import ProtocolParseError
 
 MAX_REQUEST_BYTES = 256 * 1024
 

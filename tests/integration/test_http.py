@@ -1,4 +1,4 @@
-"""``pyac http`` against the fake gateway: every layer at once.
+"""``pylis http`` against the fake gateway: every layer at once.
 
 Aggregate-auth, ``CONNECT``, CSTP framing, the userspace IPv4 stack, the TCP
 state machine, and an HTTP request served by a peer sitting behind the tunnel.
@@ -19,9 +19,9 @@ from usernet.net.tcp import Flag, parse_tcp
 from usernet.resolve import StaticResolver
 from usernet.testing.peer import TcpPeer, http_handler
 
-from pyac.cli.cmd_http import Target, _run
-from pyac.config import Credentials, GatewayConfig
-from pyac.errors import ConnectionTimeout, RouteNotAllowed
+from pylis.cli.cmd_http import Target, _run
+from pylis.config import Credentials, GatewayConfig
+from pylis.errors import ConnectionTimeout, RouteNotAllowed
 from tests.fakegw import FakeGateway
 from tests.fakegw.server import DEFAULT_TUNNEL_HEADERS
 from tests.integration.test_tunnel import pcap_packets

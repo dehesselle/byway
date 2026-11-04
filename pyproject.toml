@@ -1,5 +1,5 @@
 [project]
-name = "pyac"
+name = "pylis"
 dynamic = ["version"]
 description = "Userspace client that speaks the Cisco AnyConnect VPN protocol, with an in-process TCP/IP stack"
 readme = "README.md"
@@ -16,7 +16,7 @@ dependencies = [
 keyring = ["keyring>=25"]
 
 [project.scripts]
-pyac = "pyac.cli.main:main"
+pylis = "pylis.cli.main:main"
 
 [build-system]
 requires = ["hatchling", "hatch-vcs"]
@@ -67,7 +67,7 @@ warn_unused_ignores = true
 [[tool.mypy.overrides]]
 # The protocol codecs carry the correctness risk and have no untyped
 # third-party surface, so they get the strict treatment.
-module = ["pyac.cstp.*"]
+module = ["pylis.cstp.*"]
 strict = true
 
 [[tool.mypy.overrides]]
@@ -88,5 +88,5 @@ markers = [
 ]
 
 [tool.coverage.run]
-source = ["pyac"]
+source = ["pylis"]
 branch = true

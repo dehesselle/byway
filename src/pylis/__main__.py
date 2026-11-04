@@ -1,8 +1,8 @@
-"""Entry point for ``python -m pyac``."""
+"""Entry point for ``python -m pylis``."""
 
 from __future__ import annotations
 
-from pyac.cli.main import main
+from pylis.cli.main import main
 
 if __name__ == "__main__":
     raise SystemExit(main())

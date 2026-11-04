@@ -1,14 +1,14 @@
-"""pyac -- a userspace client that speaks the Cisco AnyConnect VPN protocol.
+"""pylis -- a userspace client that speaks the Cisco AnyConnect VPN protocol.
 
 Connects to a VPN gateway and terminates the tunnel's IP traffic in an
 in-process TCP/IP stack, so no tun device, virtual adapter, routing change, or
 administrator privilege is required.
 
-    async with pyac.connect("vpn.corp.example", user, password) as vpn:
+    async with pylis.connect("vpn.corp.example", user, password) as vpn:
         reader, writer = await vpn.open_connection("10.0.0.5", 22)
 
 Importing this package stays free of side effects: the names below are bound
-lazily, so ``import pyac`` does not drag in httpx and the whole stack for a
+lazily, so ``import pylis`` does not drag in httpx and the whole stack for a
 program that only wanted the version.
 """
 
@@ -28,10 +28,10 @@ __all__ = [
 ]
 
 if TYPE_CHECKING:
-    from pyac.api import VpnClient, connect
-    from pyac.config import Credentials, GatewayConfig
-    from pyac.cstp.config import TunnelConfig
-    from pyac.sync_api import SyncVpnClient, connect_sync
+    from pylis.api import VpnClient, connect
+    from pylis.config import Credentials, GatewayConfig
+    from pylis.cstp.config import TunnelConfig
+    from pylis.sync_api import SyncVpnClient, connect_sync
 
 
 def __getattr__(name: str) -> Any:
@@ -43,23 +43,23 @@ def __getattr__(name: str) -> Any:
         from importlib.metadata import PackageNotFoundError, version
 
         try:
-            return version("pyac")
+            return version("pylis")
         except PackageNotFoundError:
             return "0.0.0+unknown"
     if name in ("VpnClient", "connect"):
-        from pyac import api
+        from pylis import api
 
         return getattr(api, name)
     if name in ("SyncVpnClient", "connect_sync"):
-        from pyac import sync_api
+        from pylis import sync_api
 
         return getattr(sync_api, name)
     if name in ("Credentials", "GatewayConfig"):
-        from pyac import config
+        from pylis import config
 
         return getattr(config, name)
     if name == "TunnelConfig":
-        from pyac.cstp.config import TunnelConfig
+        from pylis.cstp.config import TunnelConfig
 
         return TunnelConfig
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

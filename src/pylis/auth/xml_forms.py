@@ -18,8 +18,8 @@ from typing import Final
 
 from defusedxml.ElementTree import fromstring as _defused_fromstring
 
-from pyac.auth.models import AuthForm, AuthSuccess, FormField, FormOption
-from pyac.errors import AuthFailed, ProtocolParseError
+from pylis.auth.models import AuthForm, AuthSuccess, FormField, FormOption
+from pylis.errors import AuthFailed, ProtocolParseError
 
 # The gateway is untrusted input. Cap the body before parsing rather than
 # after: a decompression or entity bomb is only cheap to refuse up front.
@@ -279,9 +279,9 @@ def fill_form(
 
     if unfillable:
         raise AuthFailed(
-            "gateway asked for fields pyac cannot supply: "
+            "gateway asked for fields pylis cannot supply: "
             + ", ".join(unfillable)
-            + " -- run `pyac probe` to see the full form"
+            + " -- run `pylis probe` to see the full form"
         )
     return values
 

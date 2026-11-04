@@ -43,7 +43,7 @@ frames and gateway readers evidently assume one frame per record.
 
 Consequence: coalescing outbound packets into one TLS write — an obvious
 throughput optimisation, and one this project originally planned on — is off
-the table. `pyac up --coalesce` still enables it for experimenting against
+the table. `pylis up --coalesce` still enables it for experimenting against
 other gateways (ocserv may well tolerate it), but it must never be the default.
 
 ## Deliberate omissions in the CONNECT request
@@ -75,7 +75,7 @@ other gateways (ocserv may well tolerate it), but it must never be the default.
 
 ## First real fetch through the stack
 
-`pyac http 207.254.103.218 http://10.221.188.20/` — nginx 1.29.1, 908 bytes of
+`pylis http 207.254.103.218 http://10.221.188.20/` — nginx 1.29.1, 908 bytes of
 HTML, 78 ms total with a 47 ms connect. Tunnel `172.29.29.3/255.255.0.0`,
 MTU 1383 (so MSS 1343), split route `10.221.188.0/23`.
 

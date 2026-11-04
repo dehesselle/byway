@@ -1,6 +1,6 @@
 """Configuration shared by the auth, tunnel, and API layers.
 
-Lives outside :mod:`pyac.api` so :mod:`pyac.auth` can use it without importing
+Lives outside :mod:`pylis.api` so :mod:`pylis.auth` can use it without importing
 the public API and creating a cycle; ``api`` re-exports these names.
 """
 

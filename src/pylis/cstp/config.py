@@ -89,7 +89,7 @@ class TunnelConfig:
     is captured rather than printed."""
 
     unknown_headers: tuple[tuple[str, str], ...] = field(default=(), repr=False)
-    """Anything we did not recognise, kept so ``pyac info`` can show it and new
+    """Anything we did not recognise, kept so ``pylis info`` can show it and new
     gateway behaviour is discoverable rather than silently dropped."""
 
     @property

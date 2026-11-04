@@ -13,8 +13,8 @@ from pathlib import Path
 
 import pytest
 
-from pyac.cli import cmd_http, cmd_nc, cmd_up
-from pyac.cli.main import build_parser
+from pylis.cli import cmd_http, cmd_nc, cmd_up
+from pylis.cli.main import build_parser
 
 
 def parse(*argv: str):  # type: ignore[no-untyped-def]
