@@ -164,8 +164,8 @@ Credentials never go in `argv`. The password is resolved, in this order:
 
 1. `--password-stdin`
 2. `PYLIS_PASSWORD`
-3. a `keyring` lookup, only when `--profile` was used, keyed on the profile name and the
-   resolved username
+3. a `keyring` lookup, only when `--profile` was used and the `keyring` extra is installed,
+   keyed on the profile name and the resolved username
 4. the interactive prompt
 
 To use the keyring step, install the extra and store the password with the standalone

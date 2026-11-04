@@ -125,19 +125,16 @@ def password_from_keyring(target: str, username: str) -> str | None:
 
     ``target`` is the profile name; the password is expected to have been
     stored with ``keyring set <profile-name> <username>``. Returns ``None``
-    if nothing is stored there -- the caller falls through to the
-    interactive prompt, that is not an error. Imports keyring lazily so the
-    hard dependency list stays untouched; raises PylisError with an install
-    hint if it is missing.
+    if nothing is stored there, or if the optional keyring package is not
+    installed -- the caller falls through to the interactive prompt, neither
+    is an error. Imports keyring lazily so the hard dependency list stays
+    untouched.
     """
     try:
         import keyring
         import keyring.errors
-    except ImportError as exc:
-        raise PylisError(
-            "no password from --password-stdin or PYLIS_PASSWORD, and keyring lookup "
-            "needs the optional dependency: pip install pylis[keyring]"
-        ) from exc
+    except ImportError:
+        return None
     try:
         return keyring.get_password(target, username)
     except keyring.errors.KeyringError as exc:

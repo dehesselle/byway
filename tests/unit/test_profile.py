@@ -185,12 +185,11 @@ def test_keyring_lookup_returns_none_when_nothing_is_stored(
     assert password_from_keyring("work", "jdoe") is None
 
 
-def test_keyring_not_installed_raises_a_pylis_error_with_the_install_hint(
+def test_keyring_lookup_returns_none_when_keyring_is_not_installed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setitem(sys.modules, "keyring", None)
-    with pytest.raises(PylisError, match=r"pip install pylis\[keyring\]"):
-        password_from_keyring("work", "jdoe")
+    assert password_from_keyring("work", "jdoe") is None
 
 
 def test_keyring_backend_errors_are_wrapped(monkeypatch: pytest.MonkeyPatch) -> None:
