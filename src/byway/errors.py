@@ -2,17 +2,17 @@
 #
 # SPDX-License-Identifier: 0BSD
 
-"""Exception hierarchy for pylis.
+"""Exception hierarchy for byway.
 
-Every error the library raises derives from :class:`PylisError`, which is
+Every error the library raises derives from :class:`BywayError`, which is
 :class:`usernet.errors.UsernetError` under another name. An alias rather than a
 subclass, and that is the whole point: the stack, the sockets and the SOCKS
-server live in ``usernet`` and raise ``usernet`` errors, so a ``PylisError`` that
+server live in ``usernet`` and raise ``usernet`` errors, so a ``BywayError`` that
 did not also catch those would quietly stop covering half of what can go wrong.
 
 The ``NetworkError`` branch is re-exported from there for the same reason --
 callers import it from here, and where the class object is defined is not their
-business. The pylis-specific errors below (authentication, the CSTP tunnel) are
+business. The byway-specific errors below (authentication, the CSTP tunnel) are
 the ones that genuinely have no meaning outside this project.
 """
 
@@ -34,6 +34,7 @@ __all__ = [
     "AuthChallengeRequired",
     "AuthError",
     "AuthFailed",
+    "BywayError",
     "ConnectionRefused",
     "ConnectionReset",
     "ConnectionTimeout",
@@ -43,7 +44,6 @@ __all__ = [
     "NetworkError",
     "PostureCheckRequired",
     "ProtocolParseError",
-    "PylisError",
     "RekeyFailed",
     "ResolveError",
     "RouteNotAllowed",
@@ -52,13 +52,13 @@ __all__ = [
     "TunnelError",
 ]
 
-PylisError = UsernetError
+BywayError = UsernetError
 
 
 # --- authentication --------------------------------------------------------
 
 
-class AuthError(PylisError):
+class AuthError(BywayError):
     """Base for failures during the aggregate-auth XML exchange."""
 
 
@@ -93,7 +93,7 @@ class PostureCheckRequired(AuthError):
 # --- tunnel ----------------------------------------------------------------
 
 
-class TunnelError(PylisError):
+class TunnelError(BywayError):
     """Base for CSTP tunnel failures."""
 
 

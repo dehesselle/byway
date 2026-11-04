@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: 0BSD
 
-"""Rendering and argument handling for ``pylis probe``.
+"""Rendering and argument handling for ``byway probe``.
 
 The report is the whole product of M1 -- it is what tells us which dialect a
 gateway speaks -- so its content is worth pinning down.
@@ -15,10 +15,10 @@ from pathlib import Path
 
 import pytest
 
-from pylis.auth.models import AuthForm, GatewayInfo
-from pylis.auth.xml_forms import parse_auth_response
-from pylis.cli.cmd_probe import _as_dict, _print_report, parse_gateway
-from pylis.cli.main import build_parser
+from byway.auth.models import AuthForm, GatewayInfo
+from byway.auth.xml_forms import parse_auth_response
+from byway.cli.cmd_probe import _as_dict, _print_report, parse_gateway
+from byway.cli.main import build_parser
 
 CORPUS = Path(__file__).parent.parent / "corpus"
 

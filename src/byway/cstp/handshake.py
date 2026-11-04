@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from typing import Final
 
-from pylis.errors import HandshakeRejected, ProtocolParseError
+from byway.errors import HandshakeRejected, ProtocolParseError
 
 TUNNEL_PATH: Final = "/CSCOSSLC/tunnel"
 HEADER_TERMINATOR: Final = b"\r\n\r\n"

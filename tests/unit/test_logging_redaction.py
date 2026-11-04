@@ -14,7 +14,7 @@ import logging
 
 import pytest
 
-from pylis._logging import RedactingFilter, redact
+from byway._logging import RedactingFilter, redact
 
 REAL_TOKEN = "35B466@-1035079680@A96E@AE5ED7B1C96F6A05AE4842B8424564A705C2326B"
 
@@ -46,7 +46,7 @@ def test_ordinary_messages_are_untouched() -> None:
 
 def test_filter_rewrites_the_record(caplog: pytest.LogCaptureFixture) -> None:
     record = logging.LogRecord(
-        name="pylis.cstp",
+        name="byway.cstp",
         level=logging.DEBUG,
         pathname=__file__,
         lineno=1,

@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: 0BSD
 
-"""URL and option handling for ``pylis http``.
+"""URL and option handling for ``byway http``.
 
 The HTTP itself is httpx's since M7, so what is left here is what we decide:
 which URLs are acceptable, and which of the *two* trust decisions in this
@@ -17,15 +17,15 @@ from pathlib import Path
 
 import pytest
 
-from pylis.cli import cmd_http
-from pylis.cli.cmd_http import (
+from byway.cli import cmd_http
+from byway.cli.cmd_http import (
     parse_header,
     parse_url,
     read_body,
     request_method,
     target_verification,
 )
-from pylis.cli.main import build_parser
+from byway.cli.main import build_parser
 
 # --- URLs ------------------------------------------------------------------
 

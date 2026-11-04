@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: 0BSD
 
 [project]
-name = "pylis"
+name = "byway"
 dynamic = ["version"]
 description = "Userspace client that speaks the Cisco AnyConnect VPN protocol, with an in-process TCP/IP stack"
 readme = "README.md"
@@ -36,11 +36,11 @@ dependencies = [
 keyring = ["keyring>=25"]
 
 [project.scripts]
-pylis = "pylis.cli.main:main"
+byway = "byway.cli.main:main"
 
 [project.urls]
-Homepage = "https://github.com/dehesselle/pylis"
-Repository = "https://github.com/dehesselle/pylis"
+Homepage = "https://github.com/dehesselle/byway"
+Repository = "https://github.com/dehesselle/byway"
 
 [build-system]
 requires = ["hatchling", "hatch-vcs"]
@@ -94,7 +94,7 @@ warn_unused_ignores = true
 [[tool.mypy.overrides]]
 # The protocol codecs carry the correctness risk and have no untyped
 # third-party surface, so they get the strict treatment.
-module = ["pylis.cstp.*"]
+module = ["byway.cstp.*"]
 strict = true
 
 [[tool.mypy.overrides]]
@@ -115,5 +115,5 @@ markers = [
 ]
 
 [tool.coverage.run]
-source = ["pylis"]
+source = ["byway"]
 branch = true

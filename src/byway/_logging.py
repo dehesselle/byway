@@ -14,7 +14,7 @@ this project knows -- what an AnyConnect secret looks like on the wire.
 :func:`configure` deliberately names two loggers. ``usernet`` carries the
 stack's own diagnostics (retransmits, window stalls, dropped packets), and
 those are wanted precisely when something has gone wrong; attaching only to
-``pylis`` would send them nowhere.
+``byway`` would send them nowhere.
 """
 
 from __future__ import annotations
@@ -53,9 +53,9 @@ def redact(text: str) -> str:
 def configure(verbosity: int, stream: TextIO | None = None) -> None:
     """Set up logging. 0 = warnings, 1 = debug, 2 = debug with timestamps.
 
-    ``stream`` defaults to stderr, which is also what it must be: ``pylis nc``
+    ``stream`` defaults to stderr, which is also what it must be: ``byway nc``
     relays a connection over stdout, so a single log line landing there would
     corrupt the stream it is trying to describe. Callers that care pass it
     explicitly rather than trusting the default to stay put.
     """
-    _configure(verbosity, loggers=("pylis", "usernet"), patterns=PATTERNS, stream=stream)
+    _configure(verbosity, loggers=("byway", "usernet"), patterns=PATTERNS, stream=stream)

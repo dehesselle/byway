@@ -4,7 +4,7 @@
 
 """Terminal output that never stalls the tunnel, and a panel pinned beneath it.
 
-Everything in ``pylis up`` runs on one event loop, and a write to a terminal
+Everything in ``byway up`` runs on one event loop, and a write to a terminal
 can block: a Windows console with text selected (QuickEdit) stops accepting
 output until the selection ends, and so does a Unix terminal after Ctrl-S.
 Blocked on the loop thread, that freezes the tunnel itself -- no DPD, no
@@ -57,7 +57,7 @@ class TermWriter:
         self._dropped = 0
         self._lock = threading.Lock()
         self._closed = False
-        self._thread = threading.Thread(target=self._drain, name="pylis-terminal", daemon=True)
+        self._thread = threading.Thread(target=self._drain, name="byway-terminal", daemon=True)
         self._thread.start()
 
     # --- the stream interface ------------------------------------------------

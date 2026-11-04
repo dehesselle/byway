@@ -37,7 +37,7 @@ from usernet.socks.protocol import (
 )
 from usernet.testing.peer import TcpPeer, http_handler
 
-from pylis.errors import NetworkError
+from byway.errors import NetworkError
 from tests.fakegw import FakeGateway
 from tests.fakegw.server import DEFAULT_TUNNEL_HEADERS
 from tests.integration.test_tunnel import session_for
@@ -67,7 +67,7 @@ async def proxy_for(
         FakeGateway([], certs_dir=certs, peer=peer, tunnel_headers=TUNNEL_HEADERS) as gateway,
         session_for(gateway) as session,
     ):
-        # As `pylis up` builds it: the host table on the driver, and the proxy
+        # As `byway up` builds it: the host table on the driver, and the proxy
         # picking it up from there.
         resolver = StaticResolver(hosts) if hosts is not None else None
         driver = Driver(session, resolver=resolver)

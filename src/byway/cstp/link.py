@@ -17,7 +17,7 @@ drains everything received since the last call so the driver can feed the stack
 in one pass, and queued outbound packets are coalesced into a single TLS write,
 which is the largest cheap throughput win available.
 
-:class:`~pylis.cstp.config.TunnelConfig` carries far more than the stack needs --
+:class:`~byway.cstp.config.TunnelConfig` carries far more than the stack needs --
 DPD timers, rekey method, the banner -- but it satisfies
 :class:`usernet.link.LinkConfig` structurally, so it is handed over whole rather
 than being split in two.
@@ -36,13 +36,13 @@ from types import TracebackType
 from usernet.aio import first_of
 from usernet.link import IpLink
 
-from pylis.cstp.config import TunnelConfig
-from pylis.cstp.session import CstpSession
-from pylis.errors import AuthError, HandshakeRejected, TunnelClosed
+from byway.cstp.config import TunnelConfig
+from byway.cstp.session import CstpSession
+from byway.errors import AuthError, HandshakeRejected, TunnelClosed
 
 __all__ = ["DEFAULT_BACKOFF_MS", "DEFAULT_BUFFER_LIMIT", "IpLink", "ReconnectingLink"]
 
-log = logging.getLogger("pylis.cstp")
+log = logging.getLogger("byway.cstp")
 
 
 # Reconnect backoff. Short enough that a blip is barely noticed, long enough
@@ -128,10 +128,10 @@ class ReconnectingLink:
         self._started_at = time.monotonic()
         self._config = self._session.config
         if self._reconnect:
-            self._supervisor = asyncio.create_task(self._supervise(), name="pylis-reconnect")
+            self._supervisor = asyncio.create_task(self._supervise(), name="byway-reconnect")
             self._supervisor.add_done_callback(self._on_supervisor_done)
         else:
-            self._supervisor = asyncio.create_task(self._watch_once(), name="pylis-link-watch")
+            self._supervisor = asyncio.create_task(self._watch_once(), name="byway-link-watch")
             self._supervisor.add_done_callback(self._on_supervisor_done)
         return self._session.config
 

@@ -20,8 +20,8 @@ from pathlib import Path
 
 from usernet.resolve import StaticResolver
 
-from pylis.errors import PylisError
-from pylis.profile import load_profile
+from byway.errors import BywayError
+from byway.profile import load_profile
 
 MIN_BUFFER_KIB = 8
 
@@ -112,11 +112,11 @@ def host_resolver(args: argparse.Namespace) -> StaticResolver:
     for entry in getattr(args, "add_host", []):
         name, separator, address = entry.partition("=")
         if not separator:
-            raise PylisError(f"--add-host expects NAME=ADDR, got {entry!r}")
+            raise BywayError(f"--add-host expects NAME=ADDR, got {entry!r}")
         try:
             StaticResolver({name: address}, source=f"--add-host {entry}")
         except ValueError as exc:
-            raise PylisError(str(exc)) from None
+            raise BywayError(str(exc)) from None
         hosts[name] = address
     profile = getattr(args, "profile", None)
     if profile:

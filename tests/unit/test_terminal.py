@@ -16,8 +16,8 @@ import time
 
 import pytest
 
-from pylis.cli import terminal
-from pylis.cli.terminal import POP_TITLE, PUSH_TITLE, TermWriter, set_title_sequence, window_title
+from byway.cli import terminal
+from byway.cli.terminal import POP_TITLE, PUSH_TITLE, TermWriter, set_title_sequence, window_title
 
 
 class Sink(io.StringIO):
@@ -136,7 +136,7 @@ def test_a_wrapped_panel_line_is_counted_as_the_rows_it_takes() -> None:
 
 
 def test_controls_cannot_end_the_title_sequence_early() -> None:
-    assert set_title_sequence("py\x07l\x1bi\x9bs") == "\x1b]0;pylis\x07"
+    assert set_title_sequence("by\x07w\x1ba\x9by") == "\x1b]0;byway\x07"
 
 
 def test_the_title_is_set_and_given_back(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -145,8 +145,8 @@ def test_the_title_is_set_and_given_back(monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.setattr(terminal, "enable_vt", lambda _stream: lambda: restored.append(True))
     sink = io.StringIO()
 
-    with pytest.raises(RuntimeError), window_title(sink, "pylis"):
-        assert sink.getvalue() == PUSH_TITLE + "\x1b]0;pylis\x07"
+    with pytest.raises(RuntimeError), window_title(sink, "byway"):
+        assert sink.getvalue() == PUSH_TITLE + "\x1b]0;byway\x07"
         raise RuntimeError
 
     assert sink.getvalue().endswith(POP_TITLE)
@@ -162,6 +162,6 @@ def test_no_title_without_a_terminal(monkeypatch: pytest.MonkeyPatch, dumb: bool
         monkeypatch.delenv("TERM", raising=False)
         monkeypatch.setattr(terminal, "enable_vt", lambda _stream: None)
     sink = io.StringIO()
-    with window_title(sink, "pylis"):
+    with window_title(sink, "byway"):
         pass
     assert sink.getvalue() == ""

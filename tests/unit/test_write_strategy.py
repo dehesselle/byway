@@ -24,8 +24,8 @@ from __future__ import annotations
 import ssl
 from typing import Any
 
-from pylis.cstp.framing import FRAME_DPD_OUT, FRAME_KEEPALIVE, HEADER_LEN, PacketType, encode_frame
-from pylis.cstp.session import CstpSession
+from byway.cstp.framing import FRAME_DPD_OUT, FRAME_KEEPALIVE, HEADER_LEN, PacketType, encode_frame
+from byway.cstp.session import CstpSession
 
 
 class RecordingWriter:

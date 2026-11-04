@@ -8,13 +8,13 @@ from __future__ import annotations
 
 import pytest
 
-from pylis.cstp.handshake import (
+from byway.cstp.handshake import (
     MAX_HEADER_BYTES,
     build_connect_request,
     parse_connect_response,
     split_header_block,
 )
-from pylis.errors import HandshakeRejected, ProtocolParseError
+from byway.errors import HandshakeRejected, ProtocolParseError
 
 
 def build(**overrides: object) -> bytes:

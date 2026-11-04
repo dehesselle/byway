@@ -24,9 +24,9 @@ import pytest
 from usernet.runtime.driver import Driver
 from usernet.testing.peer import TcpPeer, http_handler
 
-from pylis.cstp.link import ReconnectingLink
-from pylis.cstp.session import CstpSession
-from pylis.errors import HandshakeRejected, NetworkError
+from byway.cstp.link import ReconnectingLink
+from byway.cstp.session import CstpSession
+from byway.errors import HandshakeRejected, NetworkError
 from tests.fakegw import FakeGateway
 from tests.fakegw.server import DEFAULT_TUNNEL_HEADERS
 
@@ -168,7 +168,7 @@ async def test_no_rekey_when_the_gateway_asks_for_none(certs: Path) -> None:
 
 
 async def test_the_effective_rekey_interval_is_reported(certs: Path) -> None:
-    """``pylis up`` prints this, so it has to be the interval in force rather
+    """``byway up`` prints this, so it has to be the interval in force rather
     than the advertised one -- otherwise the output describes something the
     link does not do."""
     async with FakeGateway(

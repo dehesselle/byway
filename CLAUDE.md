@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-pylis is a userspace client that speaks the Cisco AnyConnect VPN protocol: the tunnel
+byway is a userspace client that speaks the Cisco AnyConnect VPN protocol: the tunnel
 terminates in an in-process TCP/IP stack (from `usernet`), exposed through SOCKS5 and a
 Python API.
 
@@ -16,7 +16,7 @@ Python API.
 
 ## Documentation rules
 
-- Keep the README short: what pylis is and a working usage example. Everything else goes
+- Keep the README short: what byway is and a working usage example. Everything else goes
   into `docs/`.
 - A change that affects design, usage or behavior updates the matching document in the same
   change.

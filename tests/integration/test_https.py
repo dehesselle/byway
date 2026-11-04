@@ -28,8 +28,8 @@ from usernet.runtime.driver import Driver
 from usernet.testing.peer import TcpPeer
 from usernet.testing.tls_endpoint import TlsHttpEndpoint
 
-from pylis.cli.cmd_http import Target, _run
-from pylis.config import Credentials, GatewayConfig
+from byway.cli.cmd_http import Target, _run
+from byway.config import Credentials, GatewayConfig
 from tests.fakegw import FakeGateway
 from tests.fakegw.server import DEFAULT_TUNNEL_HEADERS
 from tests.integration.test_http import auth_exchange
@@ -192,7 +192,7 @@ async def test_an_untrusted_certificate_is_refused_through_the_tunnel(gw_certs: 
 # --- through the command ----------------------------------------------------
 
 
-async def test_pylis_get_fetches_an_https_url(
+async def test_byway_get_fetches_an_https_url(
     gw_certs: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     api = endpoint(gw_certs, b'{"ok":true}')

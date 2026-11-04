@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: 0BSD
 
-"""What ``pylis up`` reports about staying alive.
+"""What ``byway up`` reports about staying alive.
 
 These lines used to be printed only when the gateway advertised a rekey time.
 Against a gateway that advertises none -- as the one this was developed
@@ -17,10 +17,10 @@ import argparse
 
 import pytest
 
-from pylis.cli.cmd_up import print_close_advice, print_liveness, print_tunnel
-from pylis.cli.main import build_parser
-from pylis.cstp.config import TunnelConfig
-from pylis.errors import HandshakeRejected
+from byway.cli.cmd_up import print_close_advice, print_liveness, print_tunnel
+from byway.cli.main import build_parser
+from byway.cstp.config import TunnelConfig
+from byway.errors import HandshakeRejected
 
 
 def config(**overrides: object) -> TunnelConfig:

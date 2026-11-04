@@ -4,7 +4,7 @@
 
 """Global flags must work on either side of the subcommand.
 
-``pylis up 1.2.3.4 -u me --pcap f.pcap`` is what a user naturally types, and
+``byway up 1.2.3.4 -u me --pcap f.pcap`` is what a user naturally types, and
 argparse rejects it unless the flags are attached to the subparser too. The
 subtle half is that adding them to the subparser can silently *erase* a value
 given before the subcommand, because argparse parses the subcommand into a
@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import pytest
 
-from pylis.cli.main import build_parser
+from byway.cli.main import build_parser
 
 
 def parse(*argv: str):  # type: ignore[no-untyped-def]

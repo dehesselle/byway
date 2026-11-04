@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: 0BSD
 
-"""A live panel under ``pylis up``'s output, when there is a terminal to draw on.
+"""A live panel under ``byway up``'s output, when there is a terminal to draw on.
 
 It answers "is the tunnel alive?" rather than "how fast is it?". Throughput
 alone cannot tell an idle tunnel from a dead one -- both read 0 B/s -- so the
@@ -29,8 +29,8 @@ from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, TextIO
 
-from pylis.cli.terminal import TermWriter, enable_vt, visible_length
-from pylis.cstp.link import ReconnectingLink
+from byway.cli.terminal import TermWriter, enable_vt, visible_length
+from byway.cstp.link import ReconnectingLink
 
 if TYPE_CHECKING:
     from usernet.runtime.driver import TcpStream
@@ -45,7 +45,7 @@ FLUSH_TIMEOUT = 3.0
 
 @dataclass
 class Sources:
-    """What the panel reads. ``pylis up`` fills in the parts it has."""
+    """What the panel reads. ``byway up`` fills in the parts it has."""
 
     link: ReconnectingLink
     gateway: str
@@ -342,7 +342,7 @@ def render(
     else:
         body = left_lines + right_lines  # too narrow for two columns: stack them
 
-    title = f"pylis {g.dot} {sample.address} via {sample.gateway}"
+    title = f"byway {g.dot} {sample.address} via {sample.gateway}"
     lines = [_top(title, usable, final, g, st)]
     lines += [_framed(line, inner, g, st) for line in body]
 
@@ -406,7 +406,7 @@ def _connection(conn: ConnSample, inner: int, g: Glyphs, st: Style) -> str:
 
 
 def wanted(args: argparse.Namespace) -> bool:
-    """Whether ``pylis up`` should draw the panel at all."""
+    """Whether ``byway up`` should draw the panel at all."""
     if getattr(args, "no_dashboard", False) or getattr(args, "json", False):
         return False
     if os.environ.get("TERM") == "dumb":
@@ -456,7 +456,7 @@ async def dashboard(sources: Sources, *, enabled: bool) -> AsyncIterator[bool]:
     # The handler usernet.log.configure installed, pointed at the writer.
     handlers = {
         handler
-        for name in ("pylis", "usernet")
+        for name in ("byway", "usernet")
         for handler in logging.getLogger(name).handlers
         if isinstance(handler, logging.StreamHandler) and handler.stream is sink
     }
@@ -468,7 +468,7 @@ async def dashboard(sources: Sources, *, enabled: bool) -> AsyncIterator[bool]:
             writer.set_panel(frame())
             await asyncio.sleep(REFRESH_SECONDS)
 
-    ticker = asyncio.create_task(tick(), name="pylis-dashboard")
+    ticker = asyncio.create_task(tick(), name="byway-dashboard")
     try:
         with contextlib.redirect_stdout(writer):
             yield True

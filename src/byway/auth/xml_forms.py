@@ -22,8 +22,8 @@ from typing import Final
 
 from defusedxml.ElementTree import fromstring as _defused_fromstring
 
-from pylis.auth.models import AuthForm, AuthSuccess, FormField, FormOption
-from pylis.errors import AuthFailed, ProtocolParseError
+from byway.auth.models import AuthForm, AuthSuccess, FormField, FormOption
+from byway.errors import AuthFailed, ProtocolParseError
 
 # The gateway is untrusted input. Cap the body before parsing rather than
 # after: a decompression or entity bomb is only cheap to refuse up front.
@@ -283,9 +283,9 @@ def fill_form(
 
     if unfillable:
         raise AuthFailed(
-            "gateway asked for fields pylis cannot supply: "
+            "gateway asked for fields byway cannot supply: "
             + ", ".join(unfillable)
-            + " -- run `pylis probe` to see the full form"
+            + " -- run `byway probe` to see the full form"
         )
     return values
 

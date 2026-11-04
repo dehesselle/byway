@@ -81,11 +81,11 @@ jobs:
         run: |
           uv run --isolated --no-project --with dist/*.whl python - <<'EOF'
           import os
-          import pylis
-          print(pylis.__version__)
+          import byway
+          print(byway.__version__)
           if os.environ["GITHUB_REF_TYPE"] == "tag":
               expected = os.environ["GITHUB_REF_NAME"].removeprefix("v")
-              assert pylis.__version__ == expected, (pylis.__version__, expected)
+              assert byway.__version__ == expected, (byway.__version__, expected)
           EOF
 
       - name: Upload artifacts
@@ -109,7 +109,7 @@ jobs:
       run:
         shell: bash
     steps:
-      # Only the tests; pylis comes from the wheel the Build job made.
+      # Only the tests; byway comes from the wheel the Build job made.
       # .gitattributes keeps the corpus and the tests at LF on Windows.
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -132,7 +132,7 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
 
-      # The versions in uv.lock. pylis's own dependencies, usernet among them,
+      # The versions in uv.lock. byway's own dependencies, usernet among them,
       # resolve from the wheel's metadata, as they do for users.
       - name: Install wheel and test dependencies
         run: |
@@ -183,7 +183,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     environment:
       name: pypi
-      url: https://pypi.org/p/pylis
+      url: https://pypi.org/p/byway
     steps:
       - name: Download artifacts
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2

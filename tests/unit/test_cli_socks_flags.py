@@ -13,9 +13,9 @@ from __future__ import annotations
 
 import pytest
 
-from pylis.cli.cmd_up import parse_listen, parse_socks_auth
-from pylis.cli.main import build_parser
-from pylis.errors import PylisError
+from byway.cli.cmd_up import parse_listen, parse_socks_auth
+from byway.cli.main import build_parser
+from byway.errors import BywayError
 
 
 def parse(*argv: str):  # type: ignore[no-untyped-def]
@@ -57,7 +57,7 @@ def test_no_credentials_means_no_authentication() -> None:
 
 
 def test_credentials_without_a_colon_are_rejected() -> None:
-    with pytest.raises(PylisError, match="expects USER:PASS"):
+    with pytest.raises(BywayError, match="expects USER:PASS"):
         parse_socks_auth("alice")
 
 
@@ -86,7 +86,7 @@ def test_remote_binding_needs_its_own_flag() -> None:
 def test_the_route_policy_is_unset_until_finalized() -> None:
     """None at parse time now: --profile may still supply it.
 
-    finalize_route_policy() (see pylis.cli) is what actually applies the
+    finalize_route_policy() (see byway.cli) is what actually applies the
     "auto" default, after any --profile merge; see
     tests/unit/test_cli_profile_merge.py.
     """

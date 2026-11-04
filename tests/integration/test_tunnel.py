@@ -19,9 +19,9 @@ import pytest
 from usernet.pcap import PcapWriter
 from usernet.testing.pcap import records as pcap_records
 
-from pylis.cstp.framing import PacketType, encode_frame
-from pylis.cstp.session import CstpSession
-from pylis.errors import HandshakeRejected, ProtocolParseError
+from byway.cstp.framing import PacketType, encode_frame
+from byway.cstp.session import CstpSession
+from byway.errors import HandshakeRejected, ProtocolParseError
 from tests.fakegw import FakeGateway
 
 

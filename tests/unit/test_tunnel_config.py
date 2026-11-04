@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import ipaddress
 
-from pylis.cstp.config import DEFAULT_MTU, parse_tunnel_config
+from byway.cstp.config import DEFAULT_MTU, parse_tunnel_config
 
 
 def parse(*headers: tuple[str, str]):  # type: ignore[no-untyped-def]

@@ -22,16 +22,16 @@ from typing import Any
 
 import httpx
 
-from pylis.auth.models import AuthForm, AuthSuccess, GatewayInfo
-from pylis.auth.xml_forms import (
+from byway.auth.models import AuthForm, AuthSuccess, GatewayInfo
+from byway.auth.xml_forms import (
     MAX_XML_BYTES,
     build_auth_reply,
     build_init_request,
     fill_form,
     parse_auth_response,
 )
-from pylis.config import Credentials, GatewayConfig
-from pylis.errors import (
+from byway.config import Credentials, GatewayConfig
+from byway.errors import (
     AuthChallengeRequired,
     AuthFailed,
     PostureCheckRequired,
@@ -128,7 +128,7 @@ async def inspect_certificate(gateway: GatewayConfig) -> CertificateInfo:
 
     Tries system trust first so a well-configured gateway yields full subject
     and issuer detail, then falls back to an unverified handshake purely to
-    recover the fingerprint. That fallback is what makes ``pylis probe`` useful
+    recover the fingerprint. That fallback is what makes ``byway probe`` useful
     against an internal CA: it reports *why* verification failed and what to
     pin, instead of just refusing to connect.
     """
@@ -207,7 +207,7 @@ def _check_posture_required(text: str) -> None:
     lowered = text.lower()
     if "<csd" in lowered or "hostscan" in lowered:
         raise PostureCheckRequired(
-            "gateway requires CSD/HostScan posture assessment, which pylis cannot perform"
+            "gateway requires CSD/HostScan posture assessment, which byway cannot perform"
         )
 
 
@@ -288,7 +288,7 @@ async def authenticate(gateway: GatewayConfig, credentials: Credentials) -> Auth
         raise AuthFailed(
             f"cannot verify the certificate of {gateway.host}: {certificate.verify_error}\n"
             f"  fingerprint: {certificate.fingerprint}\n"
-            f"  run `pylis probe {gateway.host}` to inspect it, then either pass\n"
+            f"  run `byway probe {gateway.host}` to inspect it, then either pass\n"
             f"  --pin {certificate.fingerprint} or supply your CA bundle"
         )
 

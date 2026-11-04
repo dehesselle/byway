@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: 0BSD
 
-"""pylis.connect_sync, end to end against the fake gateway.
+"""byway.connect_sync, end to end against the fake gateway.
 
 Mirrors the authenticated-path tests in test_api.py, but proves the sync
 facade needs no asyncio in the calling code: ``connect_sync()`` and
@@ -24,9 +24,9 @@ import httpx
 import pytest
 from usernet.testing.peer import TcpPeer, http_handler
 
-import pylis
-from pylis.config import GatewayConfig
-from pylis.errors import PylisError
+import byway
+from byway.config import GatewayConfig
+from byway.errors import BywayError
 from tests.fakegw import FakeGateway
 from tests.fakegw.server import DEFAULT_TUNNEL_HEADERS
 from tests.integration.test_http import auth_exchange
@@ -50,7 +50,7 @@ async def test_connect_sync_authenticates_gets_and_logs_out(certs: Path) -> None
         )
 
         def blocking() -> httpx.Response:
-            with pylis.connect_sync(config, "rene", "secret") as vpn:
+            with byway.connect_sync(config, "rene", "secret") as vpn:
                 return vpn.get(f"http://{SERVER_IP}/things", timeout=10)
 
         response = await asyncio.to_thread(blocking)
@@ -70,7 +70,7 @@ async def test_connect_sync_logs_out_even_when_the_body_raises(certs: Path) -> N
         )
 
         def blocking() -> None:
-            with pylis.connect_sync(config, "rene", "secret"):
+            with byway.connect_sync(config, "rene", "secret"):
                 raise RuntimeError("boom")
 
         with pytest.raises(RuntimeError, match="boom"):
@@ -91,7 +91,7 @@ async def test_sync_vpn_client_connect_works_without_a_with_block(certs: Path) -
         )
 
         def blocking() -> httpx.Response:
-            vpn = pylis.SyncVpnClient.connect(config, "rene", "secret")
+            vpn = byway.SyncVpnClient.connect(config, "rene", "secret")
             try:
                 return vpn.get(f"http://{SERVER_IP}/things", timeout=10)
             finally:
@@ -113,10 +113,10 @@ async def test_closed_sync_vpn_client_refuses_further_calls(certs: Path) -> None
         )
 
         def blocking() -> None:
-            vpn = pylis.SyncVpnClient.connect(config, "rene", "secret")
+            vpn = byway.SyncVpnClient.connect(config, "rene", "secret")
             vpn.close()
             vpn.close()  # idempotent -- must not raise or hang
-            with pytest.raises(PylisError, match="closed"):
+            with pytest.raises(BywayError, match="closed"):
                 vpn.get("http://10.11.12.13/things")
 
         await asyncio.to_thread(blocking)

@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: 0BSD
 
-"""``pylis password`` -- keep a profile's password in the system's credential store.
+"""``byway password`` -- keep a profile's password in the system's credential store.
 
 Writes the entry that ``read_password`` looks up, so that nobody has to run the
 keyring package's own CLI, which uv would not put on the PATH anyway and which
@@ -16,8 +16,8 @@ import getpass
 import sys
 from pathlib import Path
 
-from pylis.errors import PylisError
-from pylis.profile import (
+from byway.errors import BywayError
+from byway.profile import (
     delete_password_from_keyring,
     load_profile,
     require_keyring,
@@ -65,9 +65,9 @@ def read_new_password(from_stdin: bool) -> str:
     else:
         password = getpass.getpass("Password: ")
         if getpass.getpass("Repeat password: ") != password:
-            raise PylisError("the passwords do not match; nothing was stored")
+            raise BywayError("the passwords do not match; nothing was stored")
     if not password:
-        raise PylisError("the password is empty; nothing was stored")
+        raise BywayError("the password is empty; nothing was stored")
     return password
 
 
@@ -93,7 +93,7 @@ def run(args: argparse.Namespace) -> int:
             print(f"stored the password of {username} for profile {args.profile}")
     except KeyboardInterrupt:
         return 130
-    except PylisError as exc:
+    except BywayError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     return 0

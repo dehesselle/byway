@@ -16,15 +16,15 @@ from pathlib import Path
 
 import pytest
 
-from pylis.auth.models import AuthForm, AuthSuccess
-from pylis.auth.xml_forms import (
+from byway.auth.models import AuthForm, AuthSuccess
+from byway.auth.xml_forms import (
     MAX_XML_BYTES,
     build_auth_reply,
     build_init_request,
     fill_form,
     parse_auth_response,
 )
-from pylis.errors import AuthFailed, ProtocolParseError
+from byway.errors import AuthFailed, ProtocolParseError
 
 CORPUS = Path(__file__).parent.parent / "corpus"
 

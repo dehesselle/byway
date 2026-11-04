@@ -2,11 +2,11 @@
 #
 # SPDX-License-Identifier: 0BSD
 
-"""Entry point for ``python -m pylis``."""
+"""Entry point for ``python -m byway``."""
 
 from __future__ import annotations
 
-from pylis.cli.main import main
+from byway.cli.main import main
 
 if __name__ == "__main__":
     raise SystemExit(main())

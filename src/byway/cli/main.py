@@ -10,7 +10,7 @@ import argparse
 import sys
 from collections.abc import Sequence
 
-from pylis import __version__
+from byway import __version__
 
 # Commands register themselves here as they land; see cli/__init__.py.
 # Still to come: ping, resolve, info, diag.
@@ -21,7 +21,7 @@ def add_global_flags(parser: argparse.ArgumentParser, *, suppress: bool = False)
     """Add the flags that apply to every command.
 
     They are attached twice: once to the top level, and once to each
-    subcommand, so ``pylis --pcap f up ...`` and ``pylis up ... --pcap f`` both
+    subcommand, so ``byway --pcap f up ...`` and ``byway up ... --pcap f`` both
     work. Users reasonably expect the latter, and argparse would otherwise
     reject it.
 
@@ -58,16 +58,16 @@ def add_global_flags(parser: argparse.ArgumentParser, *, suppress: bool = False)
         metavar="PATH",
         default=default(None),
         help="config file for --profile (default: the platformdirs user config "
-        "dir for pylis, e.g. ~/.config/pylis/config.toml)",
+        "dir for byway, e.g. ~/.config/byway/config.toml)",
     )
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="pylis",
+        prog="byway",
         description=("Userspace client that speaks the Cisco AnyConnect VPN protocol."),
     )
-    parser.add_argument("--version", action="version", version=f"pylis {__version__}")
+    parser.add_argument("--version", action="version", version=f"byway {__version__}")
     add_global_flags(parser)
 
     shared = argparse.ArgumentParser(add_help=False)
@@ -75,7 +75,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers = parser.add_subparsers(dest="command", metavar="COMMAND")
     for module_name in _COMMAND_MODULES:
-        module = __import__(f"pylis.cli.{module_name}", fromlist=["register"])
+        module = __import__(f"byway.cli.{module_name}", fromlist=["register"])
         module.register(subparsers, shared)
     return parser
 

@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: 0BSD
 
-"""``pylis up`` -- authenticate, bring the tunnel up, and hold it there.
+"""``byway up`` -- authenticate, bring the tunnel up, and hold it there.
 
 At M2 the only thing above the tunnel is ``--dump-only``, which reports the
 IP traffic the gateway sends us. That is deliberately enough to prove framing,
@@ -28,27 +28,27 @@ from usernet.pcap import PcapWriter
 from usernet.runtime.driver import Driver
 from usernet.socks import Socks5Server
 
-from pylis._logging import configure as configure_logging
-from pylis.auth.client import authenticate, build_ssl_context, logout
-from pylis.cli import (
+from byway._logging import configure as configure_logging
+from byway.auth.client import authenticate, build_ssl_context, logout
+from byway.cli import (
     add_host_argument,
     apply_profile,
     buffer_bytes,
     finalize_route_policy,
     host_resolver,
 )
-from pylis.cli.cmd_probe import parse_gateway
-from pylis.cli.dashboard import Sources, dashboard
-from pylis.cli.dashboard import wanted as wants_dashboard
-from pylis.cli.terminal import window_title
-from pylis.config import Credentials, GatewayConfig
-from pylis.cstp.config import TunnelConfig
-from pylis.cstp.link import ReconnectingLink
-from pylis.cstp.session import CstpSession
-from pylis.errors import HandshakeRejected, ProtocolParseError, PylisError
-from pylis.profile import password_from_keyring
+from byway.cli.cmd_probe import parse_gateway
+from byway.cli.dashboard import Sources, dashboard
+from byway.cli.dashboard import wanted as wants_dashboard
+from byway.cli.terminal import window_title
+from byway.config import Credentials, GatewayConfig
+from byway.cstp.config import TunnelConfig
+from byway.cstp.link import ReconnectingLink
+from byway.cstp.session import CstpSession
+from byway.errors import BywayError, HandshakeRejected, ProtocolParseError
+from byway.profile import password_from_keyring
 
-log = logging.getLogger("pylis.cli")
+log = logging.getLogger("byway.cli")
 
 _PROTOCOLS = {1: "icmp", 6: "tcp", 17: "udp", 47: "gre", 50: "esp"}
 _ICMP_TYPES = {0: "echo-reply", 3: "unreachable", 8: "echo-request", 11: "ttl-exceeded"}
@@ -71,7 +71,7 @@ def register(
         help="gateway hostname, optionally host:port (or from --profile)",
     )
     parser.add_argument("-u", "--user", help="username (or from --profile)")
-    parser.add_argument("-g", "--group", help="tunnel group (see `pylis probe`)")
+    parser.add_argument("-g", "--group", help="tunnel group (see `byway probe`)")
     parser.add_argument(
         "--profile",
         metavar="NAME",
@@ -175,13 +175,13 @@ def read_password(
 ) -> str:
     """Never from argv: that leaks into the process list and shell history.
 
-    Order: --password-stdin, then PYLIS_PASSWORD, then (only when a profile
+    Order: --password-stdin, then BYWAY_PASSWORD, then (only when a profile
     was used) a keyring lookup keyed on the profile name and username, then
     an interactive prompt.
     """
     if from_stdin:
         return sys.stdin.readline().rstrip("\r\n")
-    if (from_env := os.environ.get("PYLIS_PASSWORD")) is not None:
+    if (from_env := os.environ.get("BYWAY_PASSWORD")) is not None:
         return from_env
     if profile is not None:
         assert username is not None, "apply_profile guarantees a username by this point"
@@ -239,7 +239,7 @@ def print_tunnel(config: TunnelConfig) -> None:
     if config.rekey_time:
         print(f"rekey     {config.rekey_time}s (method {config.rekey_method})")
     else:
-        # Said out loud, because silence here reads as "pylis forgot to print
+        # Said out loud, because silence here reads as "byway forgot to print
         # it" rather than "the gateway asked for no rekey", and the two have
         # very different consequences for a long-running session.
         print("rekey     none advertised")
@@ -295,7 +295,7 @@ def print_close_advice(
 
     print(
         "\nthe gateway rejected the session cookie, so the tunnel could not be\n"
-        "rebuilt without authenticating again. run pylis up once more to do that."
+        "rebuilt without authenticating again. run byway up once more to do that."
     )
     if config.idle_timeout and not args.keepalive:
         print(
@@ -310,7 +310,7 @@ def run(args: argparse.Namespace) -> int:
         apply_profile(args)
     except KeyboardInterrupt:
         return 130
-    except PylisError as exc:
+    except BywayError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     finalize_route_policy(args)
@@ -320,7 +320,7 @@ def run(args: argparse.Namespace) -> int:
         resolver = host_resolver(args)
         if args.keepalive:
             resolver.resolve(args.keepalive)
-    except PylisError as exc:
+    except BywayError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
     if not args.gateway:
@@ -339,12 +339,12 @@ def run(args: argparse.Namespace) -> int:
         )
     except KeyboardInterrupt:
         return 130
-    with window_title(sys.stderr, "pylis"):
+    with window_title(sys.stderr, "byway"):
         try:
             return asyncio.run(_run(args, gateway, credentials))
         except KeyboardInterrupt:
             return 130
-        except PylisError as exc:
+        except BywayError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 1
 
@@ -394,7 +394,7 @@ async def _run(args: argparse.Namespace, gateway: GatewayConfig, credentials: Cr
         async with dashboard(sources, enabled=wants_dashboard(args)) as drawing:
             if args.ping:
                 pinger = asyncio.create_task(
-                    _ping_loop(link, args.ping, args.ping_interval), name="pylis-ping"
+                    _ping_loop(link, args.ping, args.ping_interval), name="byway-ping"
                 )
             else:
                 pinger = None
@@ -420,7 +420,7 @@ async def _run(args: argparse.Namespace, gateway: GatewayConfig, credentials: Cr
                 f"reconnects {link.reconnects}"
                 + (f" ({link.address_changes} with a new address)" if link.address_changes else "")
             )
-        with contextlib.suppress(PylisError):
+        with contextlib.suppress(BywayError):
             print(link.session.stats())
     finally:
         await link.aclose()
@@ -444,7 +444,7 @@ def parse_socks_auth(spec: str | None) -> tuple[str | None, str | None]:
         return None, None
     username, separator, password = spec.partition(":")
     if not separator:
-        raise PylisError("--socks-auth expects USER:PASS")
+        raise BywayError("--socks-auth expects USER:PASS")
     return username, password
 
 
@@ -486,7 +486,7 @@ async def _serve_socks(link: ReconnectingLink, args: argparse.Namespace, sources
         if args.keepalive:
             keeper = asyncio.create_task(
                 _keepalive_loop(driver, args.keepalive, args.keepalive_interval, sources),
-                name="pylis-keepalive",
+                name="byway-keepalive",
             )
 
         while not link.closed.is_set():
@@ -543,7 +543,7 @@ async def _ping_loop(link: ReconnectingLink, target: str, interval: float) -> No
 
     This is real data on the wire, which distinguishes a gateway that drops
     idle tunnels from one that objects to how we send control frames. It is
-    also the first half of `pylis ping`.
+    also the first half of `byway ping`.
     """
     ident = os.getpid() & 0xFFFF
     sequence = 0
@@ -554,7 +554,7 @@ async def _ping_loop(link: ReconnectingLink, target: str, interval: float) -> No
             source=link.config.address,
             destination=target,
             protocol=PROTO_ICMP,
-            payload=build_echo_request(ident, sequence, b"pylis" * 4),
+            payload=build_echo_request(ident, sequence, b"byway" * 4),
             identification=sequence,
         )
         link.send(packet)

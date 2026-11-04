@@ -1,14 +1,14 @@
 # Calling REST APIs from sync code
 
-`pylis.connect_sync()` is a blocking equivalent of `pylis.connect()`, scoped to
+`byway.connect_sync()` is a blocking equivalent of `byway.connect()`, scoped to
 HTTP: no `async`, no `await`, no event loop for the calling code to manage.
 
 ```python
-import pylis
+import byway
 
 
 def fetch_things(gateway: str, user: str, password: str) -> dict:
-    with pylis.connect_sync(gateway, user, password) as vpn:
+    with byway.connect_sync(gateway, user, password) as vpn:
         response = vpn.get(f"http://10.221.188.20/v1/things", timeout=10)
         response.raise_for_status()
         return response.json()
@@ -21,15 +21,15 @@ and every call returns a normal `httpx.Response` (`.status_code`, `.json()`,
 
 ## How this works, briefly
 
-pylis's core is `asyncio` throughout, so `connect_sync()` runs the real
-`pylis.connect()` on a dedicated background thread with its own event loop,
+byway's core is `asyncio` throughout, so `connect_sync()` runs the real
+`byway.connect()` on a dedicated background thread with its own event loop,
 and blocks the calling thread for each call until it completes. You don't
 need to know this to use it — it behaves like an ordinary blocking client —
 but it's why the first call has to actually authenticate and bring up the
 tunnel before returning, same as the async path.
 
 Leaving the `with` block tears the tunnel down and posts the logout, even if
-the block raises — the same guarantee `pylis.connect()` makes, for the same
+the block raises — the same guarantee `byway.connect()` makes, for the same
 reason: a leaked session eventually locks you out of your own VPN.
 
 ## When the VPN outlives one block
@@ -39,9 +39,9 @@ code calls VPN-internal APIs from many different places — request handlers,
 background jobs, whatever — connect once and hold onto the client instead:
 
 ```python
-import pylis
+import byway
 
-vpn = pylis.SyncVpnClient.connect(gateway, user, password)
+vpn = byway.SyncVpnClient.connect(gateway, user, password)
 ...
 response = vpn.get("http://10.221.188.20/v1/things")  # from wherever
 ...
@@ -52,7 +52,7 @@ Whatever holds `vpn` owns calling `close()` exactly once — nothing does it
 for you, including garbage collection. Skipping it leaves the same leaked
 session `connect_sync()` guards against, just without a `with` block to make
 the lifetime obvious. `close()` is safe to call more than once, and calling
-`get()`/`post()`/etc. after `close()` raises a clear `PylisError` rather than
+`get()`/`post()`/etc. after `close()` raises a clear `BywayError` rather than
 hanging or failing confusingly.
 
 ## The one caveat
@@ -69,7 +69,7 @@ is refused rather than resolved by the machine's DNS. See
 no Python or asyncio involved on the calling side at all:
 
 ```console
-$ pylis up vpn.corp.example -u rene --socks
+$ byway up vpn.corp.example -u rene --socks
 $ curl --socks5 127.0.0.1:1080 http://10.221.188.20/v1/things
 ```
 

@@ -90,7 +90,7 @@ class AuthSuccess:
 
 @dataclass(frozen=True, slots=True)
 class GatewayInfo:
-    """What ``pylis probe`` learned about a gateway without authenticating."""
+    """What ``byway probe`` learned about a gateway without authenticating."""
 
     host: str
     port: int

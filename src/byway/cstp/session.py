@@ -23,8 +23,8 @@ from types import TracebackType
 
 from usernet.pcap import PcapWriter
 
-from pylis.cstp.config import TunnelConfig, parse_tunnel_config
-from pylis.cstp.framing import (
+from byway.cstp.config import TunnelConfig, parse_tunnel_config
+from byway.cstp.framing import (
     FRAME_DISCONN,
     FRAME_DPD_OUT,
     FRAME_DPD_RESP,
@@ -33,10 +33,10 @@ from pylis.cstp.framing import (
     PacketType,
     encode_frame,
 )
-from pylis.cstp.handshake import build_connect_request, parse_connect_response, split_header_block
-from pylis.errors import ProtocolParseError, TunnelClosed
+from byway.cstp.handshake import build_connect_request, parse_connect_response, split_header_block
+from byway.errors import ProtocolParseError, TunnelClosed
 
-log = logging.getLogger("pylis.cstp")
+log = logging.getLogger("byway.cstp")
 
 READ_SIZE = 65536
 

@@ -18,8 +18,8 @@ from pathlib import Path
 
 import pytest
 
-from pylis.errors import PylisError
-from pylis.profile import (
+from byway.errors import BywayError
+from byway.profile import (
     Profile,
     config_file_path,
     delete_password_from_keyring,
@@ -32,10 +32,10 @@ from pylis.profile import (
 # --- config_file_path --------------------------------------------------------
 
 
-def test_config_file_path_is_under_a_pylis_directory() -> None:
+def test_config_file_path_is_under_a_byway_directory() -> None:
     path = config_file_path()
     assert path.name == "config.toml"
-    assert path.parent.name == "pylis"
+    assert path.parent.name == "byway"
 
 
 # --- parsing, valid ----------------------------------------------------------
@@ -98,33 +98,33 @@ def test_two_profiles_in_one_file(tmp_path: Path) -> None:
 # --- parsing, invalid ---------------------------------------------------------
 
 
-def test_invalid_toml_is_a_pylis_error(tmp_path: Path) -> None:
+def test_invalid_toml_is_a_byway_error(tmp_path: Path) -> None:
     path = write(tmp_path, "this is not [ toml")
-    with pytest.raises(PylisError, match="invalid TOML"):
+    with pytest.raises(BywayError, match="invalid TOML"):
         load_profiles(path)
 
 
 def test_a_profile_without_gateway_is_rejected(tmp_path: Path) -> None:
     path = write(tmp_path, '[profiles.work]\nuser = "jdoe"\n')
-    with pytest.raises(PylisError, match="missing required key 'gateway'"):
+    with pytest.raises(BywayError, match="missing required key 'gateway'"):
         load_profiles(path)
 
 
 def test_an_unknown_key_is_rejected(tmp_path: Path) -> None:
     path = write(tmp_path, '[profiles.work]\ngateway = "x"\nbogus = 1\n')
-    with pytest.raises(PylisError, match="unknown key"):
+    with pytest.raises(BywayError, match="unknown key"):
         load_profiles(path)
 
 
 def test_a_bad_route_policy_is_rejected(tmp_path: Path) -> None:
     path = write(tmp_path, '[profiles.work]\ngateway = "x"\nroute_policy = "sometimes"\n')
-    with pytest.raises(PylisError, match="route_policy must be one of"):
+    with pytest.raises(BywayError, match="route_policy must be one of"):
         load_profiles(path)
 
 
 def test_profiles_must_be_a_table(tmp_path: Path) -> None:
     path = write(tmp_path, 'profiles = "not a table"\n')
-    with pytest.raises(PylisError, match=r"\[profiles\] must be a table"):
+    with pytest.raises(BywayError, match=r"\[profiles\] must be a table"):
         load_profiles(path)
 
 
@@ -136,13 +136,13 @@ def test_missing_file_has_no_profiles(tmp_path: Path) -> None:
 
 
 def test_load_profile_on_a_missing_file_explains_that(tmp_path: Path) -> None:
-    with pytest.raises(PylisError, match="no config file"):
+    with pytest.raises(BywayError, match="no config file"):
         load_profile("work", path=tmp_path / "nope.toml")
 
 
 def test_load_profile_lists_available_names(tmp_path: Path) -> None:
     path = write(tmp_path, '[profiles.home]\ngateway = "home.example.com"\n')
-    with pytest.raises(PylisError, match="available profiles: home"):
+    with pytest.raises(BywayError, match="available profiles: home"):
         load_profile("work", path=path)
 
 
@@ -178,7 +178,7 @@ def install_fake_keyring(monkeypatch: pytest.MonkeyPatch, get_password: object) 
 def test_keyring_lookup_returns_the_stored_password(monkeypatch: pytest.MonkeyPatch) -> None:
     calls = install_fake_keyring(monkeypatch, "hunter2")
     assert password_from_keyring("work", "jdoe") == "hunter2"
-    assert calls == [("pylis:work", "jdoe")]
+    assert calls == [("byway:work", "jdoe")]
 
 
 def test_keyring_lookup_returns_none_when_nothing_is_stored(
@@ -200,7 +200,7 @@ def test_keyring_backend_errors_are_wrapped(monkeypatch: pytest.MonkeyPatch) -> 
         raise _FakeKeyringError("locked")
 
     install_fake_keyring(monkeypatch, raising)
-    with pytest.raises(PylisError, match="keyring lookup"):
+    with pytest.raises(BywayError, match="keyring lookup"):
         password_from_keyring("work", "jdoe")
 
 
@@ -219,7 +219,7 @@ def test_changing_the_keyring_without_the_package_gives_the_install_hint(
 ) -> None:
     """Unlike a lookup, nothing can fall back to a prompt here."""
     monkeypatch.setitem(sys.modules, "keyring", None)
-    with pytest.raises(PylisError, match=r'uv tool install "pylis\[keyring\]"'):
+    with pytest.raises(BywayError, match=r'uv tool install "byway\[keyring\]"'):
         call()
 
 
@@ -241,9 +241,9 @@ def test_keyring_store_and_delete_errors_are_wrapped(monkeypatch: pytest.MonkeyP
 
     monkeypatch.setitem(sys.modules, "keyring", _BrokenKeyring)
     monkeypatch.setitem(sys.modules, "keyring.errors", _FakeErrorsModule)
-    with pytest.raises(PylisError, match="keyring store"):
+    with pytest.raises(BywayError, match="keyring store"):
         store_password_in_keyring("work", "jdoe", "hunter2")
-    with pytest.raises(PylisError, match="keyring delete"):
+    with pytest.raises(BywayError, match="keyring delete"):
         delete_password_from_keyring("work", "jdoe")
 
 
@@ -278,7 +278,7 @@ def test_an_unquoted_dotted_name_is_explained(tmp_path: Path) -> None:
         tmp_path,
         '[profiles.orka]\ngateway = "gw"\n[profiles.orka.hosts]\nnode-1.orka = "10.0.0.1"\n',
     )
-    with pytest.raises(PylisError, match=r"\[profiles\.orka\.hosts\].*quote names"):
+    with pytest.raises(BywayError, match=r"\[profiles\.orka\.hosts\].*quote names"):
         load_profile("orka", path=path)
 
 
@@ -287,11 +287,11 @@ def test_a_hosts_entry_that_is_not_an_address_is_refused(tmp_path: Path) -> None
         tmp_path,
         '[profiles.orka]\ngateway = "gw"\n[profiles.orka.hosts]\napi = "api.example"\n',
     )
-    with pytest.raises(PylisError, match=r"config\.toml: \[profiles\.orka\.hosts\].*not an IPv4"):
+    with pytest.raises(BywayError, match=r"config\.toml: \[profiles\.orka\.hosts\].*not an IPv4"):
         load_profile("orka", path=path)
 
 
 def test_hosts_must_be_a_table(tmp_path: Path) -> None:
     path = write(tmp_path, '[profiles.orka]\ngateway = "gw"\nhosts = "10.0.0.1"\n')
-    with pytest.raises(PylisError, match="must be a table"):
+    with pytest.raises(BywayError, match="must be a table"):
         load_profile("orka", path=path)

@@ -1,12 +1,12 @@
-# pylis design
+# byway design
 
-How pylis is built and why. This is the standing design reference: keep it current when the
+How byway is built and why. This is the standing design reference: keep it current when the
 design changes.
 
 ## Architecture
 
-openconnect solves the same problem as pylis by handing decapsulated IP packets to a tun
-device and letting the kernel do TCP. pylis refuses that, so it has to terminate IP itself:
+openconnect solves the same problem as byway by handing decapsulated IP packets to a tun
+device and letting the kernel do TCP. byway refuses that, so it has to terminate IP itself:
 the gateway hands us raw IP packets, and an in-process TCP/IP stack turns them back into
 streams.
 
@@ -31,7 +31,7 @@ address it was assigned. `ReconnectingLink` is this project's implementation of 
    the tunnel lives inside the Python process, so VPN access is scoped to that process.
 2. **Only the VPN protocol lives here.** Anything not specific to it belongs in `usernet`,
    behind `IpLink`.
-3. **Every session ends with a logout.** Leaving `pylis.connect()` closes the tunnel *and*
+3. **Every session ends with a logout.** Leaving `byway.connect()` closes the tunnel *and*
    posts the logout, whatever went wrong. That is not housekeeping: gateways enforce
    concurrent-session limits, and leaked sessions eventually lock you out of your own VPN
    with nothing to point at.
@@ -59,10 +59,10 @@ address it was assigned. `ReconnectingLink` is this project's implementation of 
 - **No DNS client, a static host table only.** The gateway this was developed against
   advertises no DNS servers at all, so there is nothing to ask, and the machines behind it
   have fixed addresses. The table matches names exactly: no wildcards, no search domain, no
-  reverse lookups. Querying a DNS server would also need UDP, which pylis does not carry. On
+  reverse lookups. Querying a DNS server would also need UDP, which byway does not carry. On
   a gateway that does advertise DNS servers, a resolver using them could take the table's
   place on the driver.
-- **No compression.** pylis does not advertise `X-CSTP-Accept-Encoding`, so LZS, LZ4 and
+- **No compression.** byway does not advertise `X-CSTP-Accept-Encoding`, so LZS, LZ4 and
   deflate never need implementing. A compressed frame arriving anyway is a loud error.
 - **TLS only, no DTLS.** Everything rides the TLS connection.
 - **IPv4 only, outbound TCP only.**

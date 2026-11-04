@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: 0BSD
 
-"""The ``pylis up`` dashboard: what it draws, and what it draws it from.
+"""The ``byway up`` dashboard: what it draws, and what it draws it from.
 
 The panel is redrawn by moving the cursor up as many rows as it last took, so
 a line that wraps would leave a ghost of the previous frame behind. Hence the
@@ -19,7 +19,7 @@ from typing import Any
 
 import pytest
 
-from pylis.cli.dashboard import (
+from byway.cli.dashboard import (
     ASCII,
     PLAIN,
     ConnSample,
@@ -31,7 +31,7 @@ from pylis.cli.dashboard import (
     render,
     size,
 )
-from pylis.cli.terminal import visible_length
+from byway.cli.terminal import visible_length
 
 BASE = Sample(
     address="10.1.2.3",
@@ -113,7 +113,7 @@ def test_a_narrow_terminal_stacks_them() -> None:
 
 def test_the_frame_is_closed_and_titled() -> None:
     lines = render(BASE, 100, 40, style=PLAIN)
-    assert lines[0].startswith("╭─ pylis · 10.1.2.3 via vpn.example.com")
+    assert lines[0].startswith("╭─ byway · 10.1.2.3 via vpn.example.com")
     assert lines[0].endswith("Ctrl+C to stop ─╮")
     assert lines[-1].startswith("╰") and lines[-1].endswith("╯")
     assert {len(line) for line in lines} == {99}
@@ -307,8 +307,8 @@ async def test_the_dashboard_takes_over_output_and_gives_it_back(
     import logging
     import sys
 
-    from pylis import _logging
-    from pylis.cli import dashboard as module
+    from byway import _logging
+    from byway.cli import dashboard as module
 
     console = io.StringIO()
     stdout = io.StringIO()
@@ -318,13 +318,13 @@ async def test_the_dashboard_takes_over_output_and_gives_it_back(
     monkeypatch.setattr(module, "enable_vt", lambda _stream: lambda: restored.append(True))
     monkeypatch.setattr(module, "REFRESH_SECONDS", 0.01)
     monkeypatch.setenv("NO_COLOR", "1")
-    title = "pylis / 10.1.2.3 via vpn.example.com"  # ASCII: a StringIO has no encoding
+    title = "byway / 10.1.2.3 via vpn.example.com"  # ASCII: a StringIO has no encoding
     _logging.configure(0, stream=console)
-    handler = logging.getLogger("pylis").handlers[0]
+    handler = logging.getLogger("byway").handlers[0]
     try:
         async with module.dashboard(sources_for(FakeLink()), enabled=True) as drawing:
             assert drawing
-            logging.getLogger("pylis.cli").warning("a warning")
+            logging.getLogger("byway.cli").warning("a warning")
             print("a print")
             await asyncio.sleep(0.05)
         print("after")
@@ -345,7 +345,7 @@ async def test_the_dashboard_takes_over_output_and_gives_it_back(
 
 
 async def test_no_terminal_means_no_dashboard(monkeypatch: pytest.MonkeyPatch) -> None:
-    from pylis.cli import dashboard as module
+    from byway.cli import dashboard as module
 
     monkeypatch.setattr(module, "enable_vt", lambda _stream: None)
     async with module.dashboard(sources_for(FakeLink()), enabled=True) as drawing:

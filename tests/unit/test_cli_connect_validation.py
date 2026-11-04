@@ -17,8 +17,8 @@ from pathlib import Path
 
 import pytest
 
-from pylis.cli import cmd_http, cmd_nc, cmd_up
-from pylis.cli.main import build_parser
+from byway.cli import cmd_http, cmd_nc, cmd_up
+from byway.cli.main import build_parser
 
 
 def parse(*argv: str):  # type: ignore[no-untyped-def]

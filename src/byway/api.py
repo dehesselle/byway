@@ -4,7 +4,7 @@
 
 """The in-process API: a VPN scoped to one Python program.
 
-    async with pylis.connect("vpn.corp.example", user, password) as vpn:
+    async with byway.connect("vpn.corp.example", user, password) as vpn:
         reader, writer = await vpn.open_connection("10.0.0.5", 22)
         async with vpn.httpx_client() as http:
             response = await http.get("http://10.0.0.9/v1/things")
@@ -37,11 +37,11 @@ from usernet.runtime.tls import wrap as wrap_tls
 from usernet.runtime.transport import wrap_stream
 from usernet.socks import Socks5Server
 
-from pylis.auth.client import authenticate, build_ssl_context, logout
-from pylis.config import DEFAULT_USER_AGENT, Credentials, GatewayConfig
-from pylis.cstp.config import TunnelConfig
-from pylis.cstp.link import ReconnectingLink
-from pylis.cstp.session import CstpSession
+from byway.auth.client import authenticate, build_ssl_context, logout
+from byway.config import DEFAULT_USER_AGENT, Credentials, GatewayConfig
+from byway.cstp.config import TunnelConfig
+from byway.cstp.link import ReconnectingLink
+from byway.cstp.session import CstpSession
 
 __all__ = [
     "Credentials",
@@ -179,7 +179,7 @@ class VpnClient:
         servers, so there is nothing to ask. Falling back to the host's
         resolver would leak internal hostnames to whatever DNS the machine
         happens to use, and would resolve them to the wrong answers besides.
-        A name missing from the table raises :class:`~pylis.errors.ResolveError`.
+        A name missing from the table raises :class:`~byway.errors.ResolveError`.
         """
         return [await self._driver.resolve(name)]
 
@@ -280,7 +280,7 @@ async def connect(
     refuses the rest. Raises :class:`ValueError` for a malformed table, before
     authenticating.
     """
-    resolver = StaticResolver(hosts or {}, source="the hosts table given to pylis.connect()")
+    resolver = StaticResolver(hosts or {}, source="the hosts table given to byway.connect()")
     config = (
         gateway
         if isinstance(gateway, GatewayConfig)

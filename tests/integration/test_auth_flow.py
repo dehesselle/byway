@@ -15,9 +15,9 @@ from pathlib import Path
 
 import pytest
 
-from pylis.auth.client import authenticate, inspect_certificate, probe_gateway
-from pylis.config import Credentials, GatewayConfig
-from pylis.errors import AuthChallengeRequired, AuthFailed
+from byway.auth.client import authenticate, inspect_certificate, probe_gateway
+from byway.config import Credentials, GatewayConfig
+from byway.errors import AuthChallengeRequired, AuthFailed
 from tests.fakegw import FakeGateway
 
 CORPUS = Path(__file__).parent.parent / "corpus"

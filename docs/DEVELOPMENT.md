@@ -1,8 +1,8 @@
 # Development
 
-Building and testing pylis. The design is described in [DESIGN.md](DESIGN.md).
+Building and testing byway. The design is described in [DESIGN.md](DESIGN.md).
 
-pylis uses Python 3.12 and [uv](https://docs.astral.sh/uv/):
+byway uses Python 3.12 and [uv](https://docs.astral.sh/uv/):
 
 ```sh
 uv sync --dev
@@ -42,7 +42,7 @@ GitHub environment `pypi`. The draft release is published by hand.
 ## usernet
 
 [`usernet`](https://github.com/dehesselle/usernet) is an ordinary dependency from PyPI. To
-try pylis against a local checkout of it, install that into the venv with
+try byway against a local checkout of it, install that into the venv with
 `uv pip install -e ../usernet`; the next `uv sync` puts the released version back.
 
 ## How it is tested
@@ -54,7 +54,7 @@ what it tests:
   of real gateway responses (`tests/corpus`), plus property-based tests feeding arbitrary
   bytes into every parser and asserting that only declared parse errors escape.
 - **A fake CSTP gateway** (`tests/fakegw`) that serves the auth exchange, speaks framing,
-  injects faults, and terminates IP into a test peer — so `pylis up` → SOCKS5 → a real HTTP
+  injects faults, and terminates IP into a test peer — so `byway up` → SOCKS5 → a real HTTP
   GET runs in CI with no VPN anywhere (`tests/integration`).
 - **Reconnection and rekey**, including the case that matters most: a gateway that assigns a
   different address on reconnect, where every open socket has to fail with a reason rather

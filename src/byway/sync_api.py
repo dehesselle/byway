@@ -2,17 +2,17 @@
 #
 # SPDX-License-Identifier: 0BSD
 
-"""A blocking facade over :mod:`pylis.api`, for callers that cannot use asyncio.
+"""A blocking facade over :mod:`byway.api`, for callers that cannot use asyncio.
 
-    with pylis.connect_sync("vpn.corp.example", user, password) as vpn:
+    with byway.connect_sync("vpn.corp.example", user, password) as vpn:
         response = vpn.get("http://10.0.0.9/v1/things")
 
     # or, when the VPN outlives any one block:
-    vpn = pylis.SyncVpnClient.connect("vpn.corp.example", user, password)
+    vpn = byway.SyncVpnClient.connect("vpn.corp.example", user, password)
     ...
     vpn.close()
 
-pylis's core -- the driver, the in-process TCP/IP stack, the CSTP session -- is
+byway's core -- the driver, the in-process TCP/IP stack, the CSTP session -- is
 asyncio throughout, so there is no protocol logic to duplicate here, only a
 bridge: a dedicated background thread runs one event loop for the life of the
 connection, and every :class:`SyncVpnClient` call is a coroutine submitted to
@@ -21,7 +21,7 @@ Exceptions cross the bridge unchanged -- ``Future.result()`` re-raises
 whatever the coroutine raised, in the calling thread.
 
 Scope is HTTP only. Raw streams and ``serve_socks5`` stay async-only; use
-:func:`pylis.connect` for those.
+:func:`byway.connect` for those.
 """
 
 from __future__ import annotations
@@ -35,9 +35,9 @@ from typing import Any, TypeVar
 
 import httpx
 
-from pylis.api import connect as _connect_async
-from pylis.config import GatewayConfig
-from pylis.errors import PylisError
+from byway.api import connect as _connect_async
+from byway.config import GatewayConfig
+from byway.errors import BywayError
 
 __all__ = ["SyncVpnClient", "connect_sync"]
 
@@ -49,7 +49,7 @@ class _LoopThread:
 
     def __init__(self) -> None:
         self._loop = asyncio.new_event_loop()
-        self._thread = threading.Thread(target=self._run, daemon=True, name="pylis-sync")
+        self._thread = threading.Thread(target=self._run, daemon=True, name="byway-sync")
         self._thread.start()
 
     def _run(self) -> None:
@@ -158,7 +158,7 @@ class SyncVpnClient:
 
     def request(self, method: str, url: str, **kwargs: Any) -> httpx.Response:
         if self._closed:
-            raise PylisError("this SyncVpnClient is closed")
+            raise BywayError("this SyncVpnClient is closed")
         return self._loop.run(self._http.request(method, url, **kwargs))
 
     def get(self, url: str, **kwargs: Any) -> httpx.Response:
@@ -195,10 +195,10 @@ def connect_sync(
     reconnect: bool = True,
     hosts: Mapping[str, str] | None = None,
 ) -> Iterator[SyncVpnClient]:
-    """Blocking equivalent of :func:`pylis.connect`, scoped to HTTP.
+    """Blocking equivalent of :func:`byway.connect`, scoped to HTTP.
 
     For the common case: connect, use, disconnect, all in one block. Closes
-    on exit even if the block raises -- the same guarantee :func:`pylis.connect`
+    on exit even if the block raises -- the same guarantee :func:`byway.connect`
     makes. For a VPN that outlives one block, use :meth:`SyncVpnClient.connect`
     directly and call :meth:`~SyncVpnClient.close` yourself when done.
     """
