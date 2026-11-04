@@ -184,8 +184,8 @@ instead — `probe` and `nc --via` take no credentials, so they have no use for 
 
 The config file lives where [platformdirs](https://pypi.org/project/platformdirs/) puts
 per-user config for `pylis` — `~/.config/pylis/config.toml` on Linux, `~/Library/Application
-Support/pylis/config.toml` on macOS, `%APPDATA%\pylis\config.toml` on Windows — or wherever
-`--config PATH` points instead. Each VPN gets a `[profiles.<name>]` table:
+Support/pylis/config.toml` on macOS, `%LOCALAPPDATA%\pylis\config.toml` on Windows — or
+wherever `--config PATH` points instead. Each VPN gets a `[profiles.<name>]` table:
 
 ```toml
 [profiles.work]
