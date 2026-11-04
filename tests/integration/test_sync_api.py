@@ -50,7 +50,7 @@ async def test_connect_sync_authenticates_gets_and_logs_out(certs: Path) -> None
         )
 
         def blocking() -> httpx.Response:
-            with byway.connect_sync(config, "rene", "secret") as vpn:
+            with byway.connect_sync(config, "user", "secret") as vpn:
                 return vpn.get(f"http://{SERVER_IP}/things", timeout=10)
 
         response = await asyncio.to_thread(blocking)
@@ -70,7 +70,7 @@ async def test_connect_sync_logs_out_even_when_the_body_raises(certs: Path) -> N
         )
 
         def blocking() -> None:
-            with byway.connect_sync(config, "rene", "secret"):
+            with byway.connect_sync(config, "user", "secret"):
                 raise RuntimeError("boom")
 
         with pytest.raises(RuntimeError, match="boom"):
@@ -91,7 +91,7 @@ async def test_sync_vpn_client_connect_works_without_a_with_block(certs: Path) -
         )
 
         def blocking() -> httpx.Response:
-            vpn = byway.SyncVpnClient.connect(config, "rene", "secret")
+            vpn = byway.SyncVpnClient.connect(config, "user", "secret")
             try:
                 return vpn.get(f"http://{SERVER_IP}/things", timeout=10)
             finally:
@@ -113,7 +113,7 @@ async def test_closed_sync_vpn_client_refuses_further_calls(certs: Path) -> None
         )
 
         def blocking() -> None:
-            vpn = byway.SyncVpnClient.connect(config, "rene", "secret")
+            vpn = byway.SyncVpnClient.connect(config, "user", "secret")
             vpn.close()
             vpn.close()  # idempotent -- must not raise or hang
             with pytest.raises(BywayError, match="closed"):

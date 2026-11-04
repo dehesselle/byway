@@ -84,7 +84,7 @@ async def test_full_authentication_yields_a_session_token(certs: Path) -> None:
     async with FakeGateway(responses, certs_dir=certs) as gateway:
         result = await authenticate(
             config(gateway),
-            Credentials(username="rene", password="hunter2", group="Lab"),
+            Credentials(username="user", password="hunter2", group="Lab"),
         )
         init_request, reply_request = gateway.requests
 
@@ -96,21 +96,21 @@ async def test_full_authentication_yields_a_session_token(certs: Path) -> None:
     # The opaque blob must come back with the gateway's own state intact.
     assert "aggauth-handle" in reply_request.text
     assert "<group_list>Lab</group_list>" in reply_request.text
-    assert "<username>rene</username>" in reply_request.text
+    assert "<username>user</username>" in reply_request.text
 
 
 async def test_login_failure_reports_the_gateway_message(certs: Path) -> None:
     responses = [corpus("asa_main_form.xml"), corpus("asa_login_failed.xml")]
     async with FakeGateway(responses, certs_dir=certs) as gateway:
         with pytest.raises(AuthFailed, match="Login failed"):
-            await authenticate(config(gateway), Credentials(username="rene", password="wrong"))
+            await authenticate(config(gateway), Credentials(username="user", password="wrong"))
 
 
 async def test_challenge_is_reported_not_crashed_on(certs: Path) -> None:
     responses = [corpus("asa_main_form.xml"), corpus("asa_challenge.xml")]
     async with FakeGateway(responses, certs_dir=certs) as gateway:
         with pytest.raises(AuthChallengeRequired, match="one-time passcode"):
-            await authenticate(config(gateway), Credentials(username="rene", password="hunter2"))
+            await authenticate(config(gateway), Credentials(username="user", password="hunter2"))
 
 
 async def test_matching_pin_is_accepted(certs: Path) -> None:
@@ -136,7 +136,7 @@ async def test_mismatched_pin_aborts_before_any_request(certs: Path) -> None:
         with pytest.raises(AuthFailed, match="does not match the pin"):
             await authenticate(
                 config(gateway, server_cert_pin=wrong),
-                Credentials(username="rene", password="hunter2"),
+                Credentials(username="user", password="hunter2"),
             )
         # Nothing was sent: the pin is checked against a bare handshake first.
         assert gateway.requests == []
@@ -163,7 +163,7 @@ async def test_authenticate_refuses_an_untrusted_certificate(certs: Path) -> Non
         with pytest.raises(AuthFailed, match="cannot verify the certificate"):
             await authenticate(
                 config(gateway, verify=True),
-                Credentials(username="rene", password="hunter2"),
+                Credentials(username="user", password="hunter2"),
             )
         assert gateway.requests == []
 
@@ -179,7 +179,7 @@ async def test_authenticate_accepts_an_internal_ca_via_pin(certs: Path) -> None:
         with pytest.raises(AuthFailed, match="does not match the pin"):
             await authenticate(
                 config(gateway2, verify=True, server_cert_pin=discovered.cert_fingerprint),
-                Credentials(username="rene", password="hunter2"),
+                Credentials(username="user", password="hunter2"),
             )
 
 

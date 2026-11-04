@@ -69,7 +69,7 @@ is refused rather than resolved by the machine's DNS. See
 no Python or asyncio involved on the calling side at all:
 
 ```console
-$ byway up vpn.corp.example -u rene --socks
+$ byway up vpn.corp.example -u user --socks
 $ curl --socks5 127.0.0.1:1080 http://10.221.188.20/v1/things
 ```
 

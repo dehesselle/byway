@@ -229,7 +229,7 @@ async def test_connect_authenticates_opens_and_logs_out(certs: Path) -> None:
         config = GatewayConfig(
             host="127.0.0.1", port=gateway.port, verify=gateway.ca_path, user_agent="test"
         )
-        async with byway.connect(config, "rene", "secret") as vpn:
+        async with byway.connect(config, "user", "secret") as vpn:
             assert vpn.tunnel.address == "10.20.30.40"
             reader, writer = await vpn.open_connection(SERVER_IP, 80, timeout=10)
             writer.write(b"GET / HTTP/1.1\r\n\r\n")
@@ -252,7 +252,7 @@ async def test_connect_logs_out_even_when_the_body_raises(certs: Path) -> None:
             host="127.0.0.1", port=gateway.port, verify=gateway.ca_path, user_agent="test"
         )
         with pytest.raises(RuntimeError, match="boom"):
-            async with byway.connect(config, "rene", "secret"):
+            async with byway.connect(config, "user", "secret"):
                 raise RuntimeError("boom")
 
     assert any("logout" in request.target for request in gateway.requests)
@@ -266,7 +266,7 @@ async def test_connect_refuses_a_bad_hosts_table_before_authenticating(certs: Pa
             host="127.0.0.1", port=gateway.port, verify=gateway.ca_path, user_agent="test"
         )
         with pytest.raises(ValueError, match="not an IPv4 address"):
-            async with byway.connect(config, "rene", "secret", hosts={"a": "nowhere"}):
+            async with byway.connect(config, "user", "secret", hosts={"a": "nowhere"}):
                 pass
 
     assert gateway.requests == []

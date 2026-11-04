@@ -18,7 +18,7 @@ access is scoped to one process rather than to the whole machine.
 ```console
 $ uv tool install byway
 $ byway probe vpn.corp.example          # what does this gateway ask for?
-$ byway up vpn.corp.example -u rene --socks
+$ byway up vpn.corp.example -u user --socks
 address   172.29.29.3/255.255.0.0
 mtu       1383
 routes    10.221.188.0/23
@@ -29,7 +29,7 @@ socks5    127.0.0.1:1080
 
 ```sh
 curl --socks5 127.0.0.1:1080 http://10.221.188.20/
-ssh -o ProxyCommand="byway nc --via 127.0.0.1:1080 %h %p" rene@10.221.188.32
+ssh -o ProxyCommand="byway nc --via 127.0.0.1:1080 %h %p" user@10.221.188.32
 ```
 
 Saved profiles, other ways to pass the password, and certificate pinning are in the

@@ -68,7 +68,7 @@ def test_auth_reply_echoes_opaque_unchanged() -> None:
 
     body = build_auth_reply(
         group_access="https://vpn.corp.example",
-        values={"username": "rene", "password": "hunter2"},
+        values={"username": "user", "password": "hunter2"},
         opaque=form.opaque,
     )
     root = ET.fromstring(body)
@@ -84,12 +84,12 @@ def test_auth_reply_echoes_opaque_unchanged() -> None:
 def test_auth_reply_carries_form_values_under_auth() -> None:
     body = build_auth_reply(
         group_access="https://vpn.corp.example",
-        values={"username": "rene", "password": "hunter2", "group_list": "Employees"},
+        values={"username": "user", "password": "hunter2", "group_list": "Employees"},
     )
     auth = ET.fromstring(body).find("auth")
 
     assert auth is not None
-    assert auth.findtext("username") == "rene"
+    assert auth.findtext("username") == "user"
     assert auth.findtext("password") == "hunter2"
     assert auth.findtext("group_list") == "Employees"
 
@@ -99,7 +99,7 @@ def test_auth_reply_escapes_special_characters() -> None:
     nasty = "p&ss<w>rd\"'"
     body = build_auth_reply(
         group_access="https://vpn.corp.example",
-        values={"username": "rene", "password": nasty},
+        values={"username": "user", "password": nasty},
     )
     auth = ET.fromstring(body).find("auth")
     assert auth is not None
@@ -222,8 +222,8 @@ def test_entity_expansion_is_refused() -> None:
 def test_fill_form_uses_declared_field_names() -> None:
     form = parse("asa_main_form.xml")
     assert isinstance(form, AuthForm)
-    assert fill_form(form, username="rene", password="hunter2") == {
-        "username": "rene",
+    assert fill_form(form, username="user", password="hunter2") == {
+        "username": "user",
         "password": "hunter2",
     }
 
@@ -231,14 +231,14 @@ def test_fill_form_uses_declared_field_names() -> None:
 def test_fill_form_defaults_to_the_selected_group() -> None:
     form = parse("asa_group_list.xml")
     assert isinstance(form, AuthForm)
-    values = fill_form(form, username="rene", password="hunter2")
+    values = fill_form(form, username="user", password="hunter2")
     assert values["group_list"] == "Employees"
 
 
 def test_fill_form_honours_an_explicit_group() -> None:
     form = parse("asa_group_list.xml")
     assert isinstance(form, AuthForm)
-    values = fill_form(form, username="rene", password="hunter2", group="Lab")
+    values = fill_form(form, username="user", password="hunter2", group="Lab")
     assert values["group_list"] == "Lab"
 
 
@@ -246,7 +246,7 @@ def test_fill_form_rejects_an_unknown_group_by_listing_the_real_ones() -> None:
     form = parse("asa_group_list.xml")
     assert isinstance(form, AuthForm)
     with pytest.raises(AuthFailed, match="Contractors, Employees, Lab"):
-        fill_form(form, username="rene", password="hunter2", group="Nope")
+        fill_form(form, username="user", password="hunter2", group="Nope")
 
 
 def test_fill_form_echoes_hidden_fields() -> None:
@@ -259,7 +259,7 @@ def test_fill_form_echoes_hidden_fields() -> None:
     )
     form = parse_auth_response(xml)
     assert isinstance(form, AuthForm)
-    assert fill_form(form, username="rene", password="pw")["state"] == "xyz"
+    assert fill_form(form, username="user", password="pw")["state"] == "xyz"
 
 
 def test_fill_form_reports_a_field_it_cannot_supply() -> None:
@@ -274,7 +274,7 @@ def test_fill_form_reports_a_field_it_cannot_supply() -> None:
     form = parse_auth_response(xml)
     assert isinstance(form, AuthForm)
     with pytest.raises(AuthFailed, match="secondary_password"):
-        fill_form(form, username="rene", password="pw")
+        fill_form(form, username="user", password="pw")
 
 
 def test_roundtrip_form_to_reply() -> None:
@@ -284,7 +284,7 @@ def test_roundtrip_form_to_reply() -> None:
 
     body = build_auth_reply(
         group_access="https://vpn.corp.example",
-        values=fill_form(form, username="rene", password="hunter2", group="Lab"),
+        values=fill_form(form, username="user", password="hunter2", group="Lab"),
         opaque=form.opaque,
     )
     root = ET.fromstring(body)

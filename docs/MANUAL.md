@@ -43,7 +43,7 @@ Options valid for every command, placed before or after it:
 ## Bringing the tunnel up
 
 ```console
-$ byway up vpn.corp.example -u rene --socks
+$ byway up vpn.corp.example -u user --socks
 address   172.29.29.3/255.255.0.0
 mtu       1383
 routes    10.221.188.0/23
@@ -84,7 +84,7 @@ Through a running `byway up --socks`:
 
 ```sh
 curl --socks5 127.0.0.1:1080 http://10.221.188.20/
-ssh -o ProxyCommand="byway nc --via 127.0.0.1:1080 %h %p" rene@10.221.188.32
+ssh -o ProxyCommand="byway nc --via 127.0.0.1:1080 %h %p" user@10.221.188.32
 ```
 
 `byway nc --via [HOST:]PORT` reuses the proxy, with `--via-auth USER:PASS` if it requires
@@ -119,7 +119,7 @@ the profile, like `/etc/hosts` for this one VPN:
 ```toml
 [profiles.orka]
 gateway = "vpn.example.com"
-user = "rene"
+user = "user"
 
 [profiles.orka.hosts]
 "node-1.orka" = "10.221.188.11"
@@ -195,7 +195,7 @@ wherever `--config PATH` points instead. Each VPN gets a `[profiles.<name>]` tab
 ```toml
 [profiles.work]
 gateway = "vpn.corp.example"
-user = "rene"
+user = "user"
 group = "employees"
 pin = "sha256:deadbeef..."
 # verify = false
@@ -208,7 +208,7 @@ pin = "sha256:deadbeef..."
 ```
 
 Only `gateway` is required; unknown keys are an error. `byway up --profile work` then
-behaves exactly like `byway up vpn.corp.example -u rene -g employees --pin sha256:deadbeef...`.
+behaves exactly like `byway up vpn.corp.example -u user -g employees --pin sha256:deadbeef...`.
 
 **Any flag given on the command line overrides the same setting in the profile** — the
 profile only fills in what you didn't pass. This has one asymmetric case worth knowing:
