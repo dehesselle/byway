@@ -1,0 +1,195 @@
+# SPDX-FileCopyrightText: 2026 René de Hesselle <dehesselle@web.de>
+#
+# SPDX-License-Identifier: 0BSD
+
+name: Build
+on:
+  push:
+    branches: ["**"]
+    tags: ["v[0-9]*"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  #-----------------------------------------------------------------------------
+
+  Lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+
+      # keep aligned with [tool.ruff] in pyproject.toml
+      - name: Check formatting
+        run: uvx --from 'ruff~=0.16.0' ruff format --check .
+
+      - name: Lint
+        run: uvx --from 'ruff~=0.16.0' ruff check .
+
+      - name: Check REUSE compliance
+        run: uvx reuse lint
+
+  #-----------------------------------------------------------------------------
+
+  Typecheck:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      # full history for hatch-vcs
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+
+      # per OS: mypy narrows sys.platform checks to the host
+      - name: Type-check
+        run: uv run --locked mypy src
+
+  #-----------------------------------------------------------------------------
+
+  Build:
+    runs-on: ubuntu-latest
+    steps:
+      # full history for hatch-vcs
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+
+      - name: Build project
+        run: uv build --no-sources
+
+      - name: Smoke-test wheel
+        run: |
+          uv run --isolated --no-project --with dist/*.whl python - <<'EOF'
+          import os
+          import pylis
+          print(pylis.__version__)
+          if os.environ["GITHUB_REF_TYPE"] == "tag":
+              expected = os.environ["GITHUB_REF_NAME"].removeprefix("v")
+              assert pylis.__version__ == expected, (pylis.__version__, expected)
+          EOF
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dist
+          path: dist/
+
+  #-----------------------------------------------------------------------------
+
+  Test:
+    needs:
+      - Build
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ["3.12", "3.13", "3.14"]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      # Only the tests; pylis comes from the wheel the Build job made.
+      # .gitattributes keeps the corpus and the tests at LF on Windows.
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            tests
+            pyproject.toml
+            .gitattributes
+          sparse-checkout-cone-mode: false
+
+      - name: Download artifacts
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist
+          path: dist/
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          python-version: ${{ matrix.python }}
+
+      # The versions in uv.lock. pylis's own dependencies, usernet among them,
+      # resolve from the wheel's metadata, as they do for users.
+      - name: Install wheel and test dependencies
+        run: |
+          uv venv
+          uv pip install "$(ls dist/*.whl)[keyring]" "usernet[testing]" pytest==9.1.1 pytest-asyncio==1.4.0 pytest-timeout==2.4.0 hypothesis==6.165.9 trustme==1.2.1
+
+      - name: Run tests
+        run: uv run --no-project pytest -q -m "not needs_gateway"
+
+  #-----------------------------------------------------------------------------
+
+  Release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    needs:
+      - Lint
+      - Typecheck
+      - Build
+      - Test
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist
+          path: dist/
+
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release create "$GITHUB_REF_NAME" dist/*
+          --repo "$GITHUB_REPOSITORY"
+          --draft
+          --verify-tag
+          --generate-notes
+
+  #-----------------------------------------------------------------------------
+
+  PyPI:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    needs:
+      - Build
+      - Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    environment:
+      name: pypi
+      url: https://pypi.org/p/pylis
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
