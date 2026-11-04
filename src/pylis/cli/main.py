@@ -65,10 +65,7 @@ def add_global_flags(parser: argparse.ArgumentParser, *, suppress: bool = False)
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="pylis",
-        description=(
-            "Userspace client that speaks the Cisco AnyConnect VPN protocol -- "
-            "no tun device, no admin rights."
-        ),
+        description=("Userspace client that speaks the Cisco AnyConnect VPN protocol."),
     )
     parser.add_argument("--version", action="version", version=f"pylis {__version__}")
     add_global_flags(parser)
