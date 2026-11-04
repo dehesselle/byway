@@ -258,12 +258,12 @@ def test_a_hosts_table_is_read(tmp_path: Path) -> None:
         gateway = "vpn.example.com"
 
         [profiles.work.hosts]
-        "node-1.internal" = "10.221.188.11"
-        api = "10.221.188.20"
+        "node-1.internal" = "10.0.0.11"
+        api = "10.0.0.20"
         """,
     )
     profile = load_profile("work", path=path)
-    assert profile.hosts == {"node-1.internal": "10.221.188.11", "api": "10.221.188.20"}
+    assert profile.hosts == {"node-1.internal": "10.0.0.11", "api": "10.0.0.20"}
 
 
 def test_no_hosts_table_means_an_empty_one(tmp_path: Path) -> None:

@@ -75,9 +75,9 @@ other gateways (ocserv may well tolerate it), but it must never be the default.
 
 ## First real fetch through the stack
 
-`byway http 207.254.103.218 http://10.221.188.20/` — nginx 1.29.1, 908 bytes of
+`byway http vpn.corp.example http://10.0.0.20/` — nginx 1.29.1, 908 bytes of
 HTML, 78 ms total with a 47 ms connect. Tunnel `172.29.29.3/255.255.0.0`,
-MTU 1383 (so MSS 1343), split route `10.221.188.0/23`.
+MTU 1383 (so MSS 1343), split route `10.0.0.0/23`.
 
 Five inbound frames, and nothing else:
 

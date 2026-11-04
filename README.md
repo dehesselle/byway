@@ -21,15 +21,15 @@ $ byway probe vpn.corp.example          # what does this gateway ask for?
 $ byway up vpn.corp.example -u user --socks
 address   172.29.29.3/255.255.0.0
 mtu       1383
-routes    10.221.188.0/23
+routes    10.0.0.0/23
 socks5    127.0.0.1:1080
 ```
 
 `byway up` prompts for the password and holds the tunnel open. From another terminal:
 
 ```sh
-curl --socks5 127.0.0.1:1080 http://10.221.188.20/
-ssh -o ProxyCommand="byway nc --via 127.0.0.1:1080 %h %p" user@10.221.188.32
+curl --socks5 127.0.0.1:1080 http://10.0.0.20/
+ssh -o ProxyCommand="byway nc --via 127.0.0.1:1080 %h %p" user@10.0.0.32
 ```
 
 Saved profiles, other ways to pass the password, and certificate pinning are in the
@@ -45,10 +45,10 @@ uv add byway
 import byway
 
 async with byway.connect("vpn.corp.example", user, password) as vpn:
-    reader, writer = await vpn.open_connection("10.221.188.32", 22)
+    reader, writer = await vpn.open_connection("10.0.0.32", 22)
 
     async with vpn.httpx_client() as http:
-        response = await http.get("http://10.221.188.20/v1/things")
+        response = await http.get("http://10.0.0.20/v1/things")
 ```
 
 ## Caveats

@@ -31,23 +31,23 @@ from byway.cli.main import build_parser
 
 
 def test_a_plain_url_is_split_into_host_port_and_path() -> None:
-    target = parse_url("http://10.221.188.32:8080/v1/things")
-    assert (target.host, target.port, target.path) == ("10.221.188.32", 8080, "/v1/things")
+    target = parse_url("http://10.0.0.32:8080/v1/things")
+    assert (target.host, target.port, target.path) == ("10.0.0.32", 8080, "/v1/things")
     assert target.scheme == "http"
 
 
 def test_the_defaults_are_port_80_and_root() -> None:
-    target = parse_url("http://10.221.188.32")
+    target = parse_url("http://10.0.0.32")
     assert (target.port, target.path) == (80, "/")
 
 
 def test_https_defaults_to_port_443() -> None:
-    target = parse_url("https://10.221.188.32/api")
+    target = parse_url("https://10.0.0.32/api")
     assert (target.scheme, target.port, target.path) == ("https", 443, "/api")
 
 
 def test_the_scheme_may_be_omitted() -> None:
-    assert parse_url("10.221.188.32/health").path == "/health"
+    assert parse_url("10.0.0.32/health").path == "/health"
 
 
 def test_a_hostname_is_kept_for_the_host_table_to_resolve() -> None:
@@ -63,23 +63,23 @@ def test_a_url_without_a_host_is_refused() -> None:
 
 def test_an_unknown_scheme_is_refused() -> None:
     with pytest.raises(ValueError, match="unsupported scheme"):
-        parse_url("ftp://10.221.188.32/")
+        parse_url("ftp://10.0.0.32/")
 
 
 def test_the_url_is_rebuilt_for_httpx() -> None:
     for original in (
-        "http://10.221.188.32/",
-        "https://10.221.188.32/v1/things",
-        "http://10.221.188.32:8080/x",
-        "https://10.221.188.32:8443/y",
+        "http://10.0.0.32/",
+        "https://10.0.0.32/v1/things",
+        "http://10.0.0.32:8080/x",
+        "https://10.0.0.32:8443/y",
     ):
         assert parse_url(original).url == original
 
 
 def test_a_default_port_is_left_out_of_the_authority() -> None:
-    assert parse_url("http://10.221.188.32:80/").authority == "10.221.188.32"
-    assert parse_url("https://10.221.188.32:443/").authority == "10.221.188.32"
-    assert parse_url("http://10.221.188.32:8080/").authority == "10.221.188.32:8080"
+    assert parse_url("http://10.0.0.32:80/").authority == "10.0.0.32"
+    assert parse_url("https://10.0.0.32:443/").authority == "10.0.0.32"
+    assert parse_url("http://10.0.0.32:8080/").authority == "10.0.0.32:8080"
 
 
 # --- headers ----------------------------------------------------------------

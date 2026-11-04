@@ -46,7 +46,7 @@ Options valid for every command, placed before or after it:
 $ byway up vpn.corp.example -u user --socks
 address   172.29.29.3/255.255.0.0
 mtu       1383
-routes    10.221.188.0/23
+routes    10.0.0.0/23
 socks5    127.0.0.1:1080
 ```
 
@@ -83,8 +83,8 @@ SOCKS5 resolves names only from the [host table](#host-names); any other name se
 Through a running `byway up --socks`:
 
 ```sh
-curl --socks5 127.0.0.1:1080 http://10.221.188.20/
-ssh -o ProxyCommand="byway nc --via 127.0.0.1:1080 %h %p" user@10.221.188.32
+curl --socks5 127.0.0.1:1080 http://10.0.0.20/
+ssh -o ProxyCommand="byway nc --via 127.0.0.1:1080 %h %p" user@10.0.0.32
 ```
 
 `byway nc --via [HOST:]PORT` reuses the proxy, with `--via-auth USER:PASS` if it requires
@@ -94,10 +94,10 @@ credentials. Without `--via`, `nc` authenticates itself: `--gateway GATEWAY -u U
 `byway http` brings up its own tunnel for one request:
 
 ```sh
-byway http --profile work http://10.221.188.20/v1/things
-byway http --profile work -H "Content-Type: application/json" -d '{"name": "x"}' https://10.221.188.20/v1/things
-byway http --profile work -X PUT -H "Content-Type: application/json" -d @thing.json https://10.221.188.20/v1/things/42
-byway http --profile work -X DELETE https://10.221.188.20/v1/things/42
+byway http --profile work http://10.0.0.20/v1/things
+byway http --profile work -H "Content-Type: application/json" -d '{"name": "x"}' https://10.0.0.20/v1/things
+byway http --profile work -X PUT -H "Content-Type: application/json" -d @thing.json https://10.0.0.20/v1/things/42
+byway http --profile work -X DELETE https://10.0.0.20/v1/things/42
 ```
 
 It takes `-X METHOD`, `-H "NAME: VALUE"` (repeatable), `-o FILE`, `-L` to follow redirects
@@ -122,8 +122,8 @@ gateway = "vpn.example.com"
 user = "user"
 
 [profiles.work.hosts]
-"node-1.internal" = "10.221.188.11"
-"api.internal" = "10.221.188.20"
+"node-1.internal" = "10.0.0.11"
+"api.internal" = "10.0.0.20"
 ```
 
 Quote names that contain dots: TOML reads `node-1.internal = ...` as nested tables, and byway
@@ -204,7 +204,7 @@ pin = "sha256:deadbeef..."
 # route_policy = "all"
 
 # [profiles.work.hosts]           # see Host names
-# "intranet.internal" = "10.221.188.20"
+# "intranet.internal" = "10.0.0.20"
 ```
 
 Only `gateway` is required; unknown keys are an error. `byway up --profile work` then
@@ -227,10 +227,10 @@ import byway
 async with byway.connect("vpn.corp.example", user, password) as vpn:
     # A genuine (StreamReader, StreamWriter): asyncssh, asyncpg and anything
     # written against asyncio.open_connection work unchanged.
-    reader, writer = await vpn.open_connection("10.221.188.32", 22)
+    reader, writer = await vpn.open_connection("10.0.0.32", 22)
 
     async with vpn.httpx_client() as http:
-        response = await http.get("http://10.221.188.20/v1/things")
+        response = await http.get("http://10.0.0.20/v1/things")
 
     await vpn.serve_socks5(port=1080)  # also expose it to other processes
 ```
@@ -240,7 +240,7 @@ async with byway.connect("vpn.corp.example", user, password) as vpn:
 tunnel *and* posts the logout; see [DESIGN.md](DESIGN.md#core-principles) for why that
 matters.
 
-`hosts={"api.internal": "10.221.188.20"}` is the [host table](#host-names): every method that
+`hosts={"api.internal": "10.0.0.20"}` is the [host table](#host-names): every method that
 takes a host, `httpx_client()`, `serve_socks5()` and `vpn.resolve()` use it, and refuse any
 other name.
 

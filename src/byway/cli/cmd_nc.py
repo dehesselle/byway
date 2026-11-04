@@ -6,7 +6,7 @@
 
 The point of this command is a single line in an SSH invocation::
 
-    ssh -o ProxyCommand="byway nc --via 1080 %h %p" user@10.221.188.30
+    ssh -o ProxyCommand="byway nc --via 1080 %h %p" user@10.0.0.30
 
 ``--via`` borrows a tunnel a running ``byway up --socks`` already holds open.
 Prefer it: the alternative authenticates afresh for every ssh you start, which

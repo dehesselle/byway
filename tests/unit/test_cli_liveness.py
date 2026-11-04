@@ -95,9 +95,9 @@ def test_an_idle_timeout_with_no_keepalive_is_a_warning(
 def test_a_configured_keepalive_reports_its_target_and_interval(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    print_liveness(config(), args_for("--keepalive", "10.221.188.20"), None)
+    print_liveness(config(), args_for("--keepalive", "10.0.0.20"), None)
     text = capsys.readouterr().out
-    assert "keepalive icmp echo to 10.221.188.20 every 300s" in text
+    assert "keepalive icmp echo to 10.0.0.20 every 300s" in text
 
 
 def test_no_idle_timeout_and_no_keepalive_says_nothing_about_either(
@@ -127,7 +127,7 @@ def test_the_keepalive_advice_is_dropped_once_it_is_in_use(
 ) -> None:
     """Recommending a flag the user already passed reads as a bug."""
     print_close_advice(
-        config(), args_for("--keepalive", "10.221.188.20"), HandshakeRejected(401, "rejected")
+        config(), args_for("--keepalive", "10.0.0.20"), HandshakeRejected(401, "rejected")
     )
     text = capsys.readouterr().out
     assert "rejected the session cookie" in text

@@ -9,7 +9,7 @@ import byway
 
 def fetch_things(gateway: str, user: str, password: str) -> dict:
     with byway.connect_sync(gateway, user, password) as vpn:
-        response = vpn.get(f"http://10.221.188.20/v1/things", timeout=10)
+        response = vpn.get(f"http://10.0.0.20/v1/things", timeout=10)
         response.raise_for_status()
         return response.json()
 ```
@@ -43,7 +43,7 @@ import byway
 
 vpn = byway.SyncVpnClient.connect(gateway, user, password)
 ...
-response = vpn.get("http://10.221.188.20/v1/things")  # from wherever
+response = vpn.get("http://10.0.0.20/v1/things")  # from wherever
 ...
 vpn.close()  # once, when the program is done with the VPN
 ```
@@ -70,7 +70,7 @@ no Python or asyncio involved on the calling side at all:
 
 ```console
 $ byway up vpn.corp.example -u user --socks
-$ curl --socks5 127.0.0.1:1080 http://10.221.188.20/v1/things
+$ curl --socks5 127.0.0.1:1080 http://10.0.0.20/v1/things
 ```
 
 This is `vpn.serve_socks5()` under the hood (see [MANUAL.md](MANUAL.md#library)); it stays

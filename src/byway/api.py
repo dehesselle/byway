@@ -275,7 +275,7 @@ async def connect(
     reason to raise it.
 
     ``hosts`` maps names to addresses inside the tunnel, like ``/etc/hosts``
-    for this one connection: ``{"node-1.internal": "10.221.188.11"}``. Every
+    for this one connection: ``{"node-1.internal": "10.0.0.11"}``. Every
     method taking a host, and the SOCKS proxy, resolves names from it and
     refuses the rest. Raises :class:`ValueError` for a malformed table, before
     authenticating.

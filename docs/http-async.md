@@ -12,7 +12,7 @@ import byway
 async def fetch_things(gateway: str, user: str, password: str) -> dict:
     async with byway.connect(gateway, user, password) as vpn:
         async with vpn.httpx_client() as http:
-            response = await http.get(f"http://10.221.188.20/v1/things", timeout=10)
+            response = await http.get(f"http://10.0.0.20/v1/things", timeout=10)
             response.raise_for_status()
             return response.json()
 ```
@@ -42,7 +42,7 @@ byway has no in-tunnel DNS, so **hosts are IP addresses or names from the
 machine's own DNS:
 
 ```python
-async with byway.connect(gateway, user, password, hosts={"api.internal": "10.221.188.20"}) as vpn:
+async with byway.connect(gateway, user, password, hosts={"api.internal": "10.0.0.20"}) as vpn:
     async with vpn.httpx_client() as http:
         response = await http.get("https://api.internal/v1/things")
 ```
